@@ -513,3 +513,25 @@ body:has(.dock:not([hidden])) .fab{display:none}
 .sbox{position:sticky;top:-10px;z-index:2;background:var(--surface);padding-top:2px}
 .mday.out .fill{opacity:.4}
 .ring2 .past{opacity:.45}
+
+/* smoother sideways moves (View Transitions where the phone supports them) */
+#pane{view-transition-name:pane;transform-origin:var(--ox,50%) var(--oy,0)}
+.sd.on{view-transition-name:sdsel}
+::view-transition-old(root),::view-transition-new(root){animation:none}
+::view-transition-group(sdsel){animation-duration:.26s;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
+::view-transition-old(sdsel),::view-transition-new(sdsel){animation-duration:.26s}
+::view-transition-group(pane){animation:none}
+::view-transition-old(pane){animation:paneOut .16s ease-in both}
+::view-transition-new(pane){animation:paneIn .24s cubic-bezier(.2,.8,.2,1) both}
+:root[data-dir="prev"]::view-transition-old(pane){animation-name:paneOutR}
+:root[data-dir="prev"]::view-transition-new(pane){animation-name:paneInR}
+@keyframes paneOut{to{opacity:0;transform:translateX(-14px)}}
+@keyframes paneIn{from{opacity:0;transform:translateX(14px)}}
+@keyframes paneOutR{to{opacity:0;transform:translateX(14px)}}
+@keyframes paneInR{from{opacity:0;transform:translateX(-14px)}}
+@media (prefers-reduced-motion:no-preference){
+  #view.sl,#view.sr{animation:none}
+  #pane.sl{animation:paneIn .22s cubic-bezier(.2,.8,.2,1)}
+  #pane.sr{animation:paneInR .22s cubic-bezier(.2,.8,.2,1)}
+}
+.sd{transition:background-color .2s,border-color .2s,color .2s}

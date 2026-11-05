@@ -352,7 +352,7 @@ function layoutLanes(items){
 }
 function renderDay(){
   const ds=ymd(S.cur),isToday=ds===todayStr(),work=isWorkday(S.cur);
-  let h=dayStrip()+layersHtml();
+  let h=dayStrip()+layersHtml()+`<div id="pane">`;
   if(isToday&&tasksShown()){const od=overdue();if(od.length)h+=`<section class="sec"><div class="sech"><h2>${ic("hourglass")}Carried over</h2><span class="cnt waitn">${od.length}</span></div><div class="list">${od.map(t=>{const w=daysBetween(t.date,ds),key=`tasks:${t.id}`;return `<div class="row" aria-expanded="${S.open===key}">${chk(t.id,false)}<button class="tt" data-open="${key}"><div>${t.priority==="top"?ic("star","star"):""}${esc(t.title)}</div><div class="meta waitn">Waiting ${w} day${w>1?"s":""} · from ${shortD(t.date)}</div></button></div>${peekIf(key)}`}).join("")}</div></section>`}
   if(tasksShown())h+=top3Html(ds,true);
   const other=tasksDue(ds).filter(t=>t.priority!=="top"),dls=deadlinesFor(ds);
@@ -376,7 +376,7 @@ function renderDay(){
   const fw=freeWork(ds),need=S.tasks.filter(t=>(t.date===ds||(isToday&&t.date&&t.date<ds))&&!t.done&&t.mins&&!S.blocks.some(b=>b.taskId===t.id&&b.date===ds)).reduce((a,t)=>a+Math.round(t.mins*ratio()),0);
   h+=`<section class="sec"><div class="sech"><h2>${ic("clock")}Plan</h2><span class="cnt">${work?(fw?inFmt(fw)+" free in work day":"Work day fully booked"):"Day off"}</span></div>`;
   if(work&&need>fw)h+=`<div class="over"><b>Too much for one day</b><span>Tasks need about ${inFmt(need)}, you have ${fw?inFmt(fw):"no time"} free.</span></div>`;
-  h+=`<div class="tl" style="height:${height}px;margin-top:14px"><div class="rail">${rail}</div><div class="grid">${grid}</div></div></section>`;
+  h+=`<div class="tl" style="height:${height}px;margin-top:14px"><div class="rail">${rail}</div><div class="grid">${grid}</div></div></section></div>`;
   $("#view").innerHTML=h;
   if(isToday&&!renderDay._scrolled){renderDay._scrolled=true;const el=document.querySelector(".tl");if(el){const top=el.getBoundingClientRect().top+scrollY+y(Math.max(nm-60,sH*60))-220;if(top>200)scrollTo({top})}}
 }
@@ -385,7 +385,7 @@ function renderDay(){
 function renderWeek(){
   const mo=monday(S.cur),td=todayStr();
   const lo=Math.min(7*60,toMin(S.work.start)),hi=Math.max(18*60,toMin(S.work.end)),span=hi-lo,X=m=>Math.max(0,Math.min(100,(m-lo)/span*100));
-  let h=weekStrip()+layersHtml();
+  let h=weekStrip()+layersHtml()+`<div id="pane">`;
   h+=`<section class="card load" aria-label="How full each day is">${[0,1,2,3,4,5,6].map(i=>{const d=addDays(mo,i),ds=ymd(d),its=itemsFor(ds);
     const segs=its.map(it=>{const a=X(toMin(it.start)),b=X(toMin(it.end));return b>a?`<i class="k-${it.kind||"work"} ${timing(it,ds)}" style="left:${a}%;width:${b-a}%"></i>`:""}).join("");
     const wk=isWorkday(d)?`<span class="wk" style="left:${X(toMin(S.work.start))}%;width:${X(toMin(S.work.end))-X(toMin(S.work.start))}%"></span>`:"";
@@ -396,7 +396,7 @@ function renderWeek(){
     const tk=tasksDue(ds).filter(t=>!t.done).sort((a,b)=>(a.priority==="top"?0:1)-(b.priority==="top"?0:1)),dl=deadlinesFor(ds).filter(t=>!t.done);
     const evn=its.filter(x=>x.src!=="routines").length,nt=tk.length+dl.length,parts=[evn&&`${evn} event${evn>1?"s":""}`,nt&&`${nt} task${nt>1?"s":""}`].filter(Boolean).join(" · ");
     h+=`<section class="wd mag ${ds===td?"today":""} ${ds===S.hl?"selday":""}" id="mag-${ds}"><button class="wh" data-zday="${ds}"><span class="d">${fmt(d,{weekday:"short",day:1,month:"short"})}</span><span class="c">${ds===td?"Today":parts}</span></button>${dayList(ds,its,tk,dl)}</section>`}
-  $("#view").innerHTML=h+"</div>";
+  $("#view").innerHTML=h+"</div></div>";
   if(S.hl){const el=document.getElementById("mag-"+S.hl);S.hl=null;if(el)setTimeout(()=>el.scrollIntoView({behavior:reduced()?"auto":"smooth",block:"start"}),60)}
 }
 
@@ -404,7 +404,7 @@ function renderWeek(){
 function renderMonth(){
   const first=new Date(S.cur.getFullYear(),S.cur.getMonth(),1),start=monday(first),td=todayStr();
   const inMonth=ds=>fromYmd(ds).getMonth()===first.getMonth();
-  let h=layersHtml()+`<div class="mgrid"><div class="mhead">${DAYN.map((d,i)=>`<span class="${i>4?"we":""}">${d.slice(0,2)}</span>`).join("")}</div><div class="mdays">`;
+  let h=layersHtml()+`<div id="pane"><div class="mgrid"><div class="mhead">${DAYN.map((d,i)=>`<span class="${i>4?"we":""}">${d.slice(0,2)}</span>`).join("")}</div><div class="mdays">`;
   for(let w=0;w<6;w++){const m=addDays(start,w*7);if(w>0&&m.getMonth()!==first.getMonth())break;
     h+=`<div class="mrow" role="button" tabindex="0" data-zweek="${ymd(m)}" aria-label="Week of ${shortD(ymd(m))}. Open the week">`;
     for(let i=0;i<7;i++){const d=addDays(m,i),ds=ymd(d),ev=itemsFor(ds).filter(x=>x.src!=="routines"),tk=tasksDue(ds).filter(t=>!t.done),dl=deadlinesFor(ds).filter(t=>!t.done),hol=ev.find(x=>/^Public holiday/i.test(x.title));
@@ -416,7 +416,7 @@ function renderMonth(){
   let list="";
   for(let dd=fromDay;dd<=lastDay;dd++){const d=new Date(first.getFullYear(),first.getMonth(),dd),ds=ymd(d),ev=itemsFor(ds).filter(x=>x.src!=="routines"),tk=tasksDue(ds).filter(t=>!t.done),dl=deadlinesFor(ds).filter(t=>!t.done);if(!ev.length&&!tk.length&&!dl.length)continue;
     list+=`<section class="wd ${ds===td?"today":""}"><button class="wh" data-zday="${ds}"><span class="d">${fmt(d,{weekday:"short",day:1,month:"short"})}</span><span class="c">${ds===td?"Today":""}</span></button>${dayList(ds,ev,tk,dl)}</section>`}
-  h+=`<section class="sec"><div class="sech"><h2>${ic("list")}${fromDay>1?"Still to come in ":""}${MONL[first.getMonth()]}</h2></div>`+(list?`<div class="week">${list}</div>`:`<div class="empty">Nothing planned</div>`)+`</section>`;
+  h+=`<section class="sec"><div class="sech"><h2>${ic("list")}${fromDay>1?"Still to come in ":""}${MONL[first.getMonth()]}</h2></div>`+(list?`<div class="week">${list}</div>`:`<div class="empty">Nothing planned</div>`)+`</section></div>`;
   $("#view").innerHTML=h;
 }
 
@@ -455,10 +455,18 @@ function render(keepScroll=true){
   if(S.dock)renderDock();
 }
 function animate(cls,origin){
-  const v=$("#view");v.classList.remove("zin","zout","sl","sr");void v.offsetWidth;
+  const v=(cls==="sl"||cls==="sr")&&$("#pane")||$("#view");v.classList.remove("zin","zout","sl","sr");void v.offsetWidth;
   if(origin){const r=v.getBoundingClientRect();v.style.setProperty("--ox",(origin.x-r.left)+"px");v.style.setProperty("--oy",(origin.y-r.top)+"px")}else{v.style.setProperty("--ox","50%");v.style.setProperty("--oy","0px")}
   v.classList.add(cls);v.addEventListener("animationend",()=>v.classList.remove(cls),{once:true});
 }
+
+/* sideways moves: only the content under the strip slides and crossfades; the selected day glides along the strip */
+function slide(update,dir,top=true){
+  const keepTop=()=>{if(!top)return;const st=document.querySelector(".strip,.layers");if(!st)return;const hdr=$("header.top").offsetHeight,lim=Math.max(0,st.getBoundingClientRect().top+scrollY-hdr-8);if(scrollY>lim)scrollTo(0,lim)};
+  if(document.startViewTransition&&!reduced()){document.documentElement.dataset.dir=dir;const t=document.startViewTransition(()=>{update();keepTop()});t.finished.finally(()=>delete document.documentElement.dataset.dir);return}
+  update();keepTop();animate(dir==="next"?"sl":"sr");
+}
+function pickDay(ds){const dir=ds>ymd(S.cur)?"next":"prev";slide(()=>{S.cur=fromYmd(ds);S.open=null;S.dock=null;renderDock();renderDay._scrolled=true;setHash(calHash());store.set("lastCal",calHash());render()},dir)}
 
 /* ---------- navigation ---------- */
 S.scroll=store.get("scroll",{});
@@ -477,13 +485,13 @@ function goCal(zoom,date,origin){
 }
 function go(view){
   rememberScroll();S.dock=null;renderDock();S.open=null;
-  if(view==="cal"){const last=store.get("lastCal",null);if(last){const[,z,d]=last.split("/");S.zoom=LEVEL[z]!==undefined?z:"day";S.cur=fromYmd(d)}else{S.zoom="day";S.cur=new Date();S.cur.setHours(0,0,0,0)}S.view="cal";setHash(calHash())}
+  if(view==="cal"){const n=new Date();S.zoom="month";S.cur=new Date(n.getFullYear(),n.getMonth(),1);S.view="cal";setHash(calHash())}
   else{S.view=view;setHash(view)}
   render(false);const y=S.scroll[viewKey()];if(y!==undefined)scrollTo(0,y);animate("sl");
 }
 function step(n){
-  if(S.zoom==="month")S.cur=new Date(S.cur.getFullYear(),S.cur.getMonth()+n,1);else S.cur=addDays(S.cur,S.zoom==="week"?7*n:n);
-  S.open=null;S.dock=null;renderDock();if(S.zoom==="day")renderDay._scrolled=false;store.set("lastCal",calHash());setHash(calHash());render(false);if(S.zoom!=="day"||ymd(S.cur)!==todayStr())scrollTo(0,0);animate(n>0?"sl":"sr");
+  slide(()=>{if(S.zoom==="month")S.cur=new Date(S.cur.getFullYear(),S.cur.getMonth()+n,1);else S.cur=addDays(S.cur,S.zoom==="week"?7*n:n);
+    S.open=null;S.dock=null;renderDock();renderDay._scrolled=true;store.set("lastCal",calHash());setHash(calHash());render()},n>0?"next":"prev",false);
 }
 function zoomOut(){if(S.zoom==="day"){S.hl=ymd(S.cur);goCal("week")}else if(S.zoom==="week")goCal("month")}
 function zoomIn(origin){
@@ -492,7 +500,7 @@ function zoomIn(origin){
 }
 function route(){
   const h=location.hash.slice(1),p=h.split("/");
-  if(p[0]==="cal"){S.view="cal";S.zoom=LEVEL[p[1]]!==undefined?p[1]:"day";S.cur=p[2]&&/^\d{4}-\d\d-\d\d$/.test(p[2])?fromYmd(p[2]):new Date();S.cur.setHours(0,0,0,0)}
+  if(p[0]==="cal"){S.view="cal";S.zoom=LEVEL[p[1]]!==undefined?p[1]:"month";S.cur=p[2]&&/^\d{4}-\d\d-\d\d$/.test(p[2])?fromYmd(p[2]):new Date();S.cur.setHours(0,0,0,0)}
   else if(["day","week","month"].includes(p[0])){S.view="cal";S.zoom=p[0]}
   else S.view=["home","tasks","routines"].includes(p[0])?p[0]:"home";
   closeSheet();render(false);
@@ -663,11 +671,11 @@ document.addEventListener("click",e=>{
   const dk=e.target.closest("[data-dock]");if(dk){openDock(dk.dataset.dock);return}
   const op=e.target.closest("[data-open]");if(op){S.open=S.open===op.dataset.open?null:op.dataset.open;render();return}
   const ly=e.target.closest("[data-layer]");if(ly){const k=ly.dataset.layer;S.hide.has(k)?S.hide.delete(k):S.hide.add(k);store.set("hide",[...S.hide]);render();return}
-  if(e.target.closest("[data-today]")){const n=new Date();n.setHours(0,0,0,0);S.cur=n;if(S.zoom==="day")renderDay._scrolled=false;setHash(calHash());store.set("lastCal",calHash());render(false);animate("sl");return}
+  if(e.target.closest("[data-today]")){const n=new Date();n.setHours(0,0,0,0);const dir=n>S.cur?"next":"prev";slide(()=>{S.cur=n;renderDay._scrolled=true;setHash(calHash());store.set("lastCal",calHash());render()},dir);return}
   if(e.target.closest("[data-search]")){openSearch();return}
   const cr=e.target.closest("[data-crumb]");if(cr){if(cr.dataset.crumb==="week")S.hl=ymd(S.cur);goCal(cr.dataset.crumb,null,pt(e));return}
-  const pk=e.target.closest("[data-pick]");if(pk){const n=pk.dataset.pick,dir=n>ymd(S.cur)?"sl":"sr";S.cur=fromYmd(n);S.open=null;S.dock=null;renderDock();renderDay._scrolled=false;setHash(calHash());store.set("lastCal",calHash());render(false);if(n!==todayStr())scrollTo(0,0);animate(dir);return}
-  const pw=e.target.closest("[data-pickw]");if(pw){const n=pw.dataset.pickw,dir=n>ymd(monday(S.cur))?"sl":"sr";S.cur=fromYmd(n);S.open=null;setHash(calHash());store.set("lastCal",calHash());render(false);scrollTo(0,0);animate(dir);return}
+  const pk=e.target.closest("[data-pick]");if(pk){if(pk.dataset.pick!==ymd(S.cur))pickDay(pk.dataset.pick);return}
+  const pw=e.target.closest("[data-pickw]");if(pw){const n=pw.dataset.pickw;if(n!==ymd(monday(S.cur)))slide(()=>{S.cur=fromYmd(n);S.open=null;setHash(calHash());store.set("lastCal",calHash());render()},n>ymd(monday(S.cur))?"next":"prev");return}
   const zd=e.target.closest("[data-zday]");if(zd){goCal("day",zd.dataset.zday,pt(e));return}
   const zw=e.target.closest("[data-zweek]");if(zw){const cell=e.target.closest("[data-zday-w]");S.hl=cell?cell.dataset.zdayW:null;goCal("week",zw.dataset.zweek,pt(e));return}
   const at=e.target.closest("[data-addtop]");if(at){openSheet("tasks",null,{date:at.dataset.addtop,priority:"top"});return}
