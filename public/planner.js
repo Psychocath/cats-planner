@@ -226,17 +226,24 @@ function renderWeek(){
 /* ---------- month ---------- */
 function renderMonth(){
   const first=new Date(S.cur.getFullYear(),S.cur.getMonth(),1),start=addDays(first,1-wd(first)),td=todayStr();
-  if(!S.sel||fromYmd(S.sel).getMonth()!==first.getMonth())S.sel=ymd(S.cur);
+  const inMonth=ds=>fromYmd(ds).getMonth()===first.getMonth();
+  if(S.sel&&!inMonth(S.sel))S.sel=null;
+  const dayInfo=ds=>{const ev=itemsFor(ds).filter(x=>x.src!=="routines"),tk=S.tasks.filter(t=>t.date===ds&&!t.done),dl=S.tasks.filter(t=>t.for===ds&&t.date!==ds&&!t.done);return{ev,tk,dl}};
   let h=`<div class="mgrid" role="grid"><div class="mhead">${DAYN.map(d=>`<span>${d.slice(0,2)}</span>`).join("")}</div><div class="mdays">`;
   for(let i=0;i<42;i++){const d=addDays(start,i),ds=ymd(d);if(i>=35&&d.getMonth()!==first.getMonth())break;
-    const its=itemsFor(ds).filter(x=>x.src!=="routines"),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length,dlc=S.tasks.filter(t=>t.for===ds&&!t.done).length,out=d.getMonth()!==first.getMonth();
-    const hol=its.find(x=>/^Public holiday/i.test(x.title));
-    h+=`<button class="mday ${out?"out":""} ${ds===td?"today":""} ${ds===S.sel?"sel":""} ${hol?"hol":""}" data-sel="${ds}" aria-label="${fmt(d,{weekday:"long",day:1,month:"long"})}, ${its.length} items"><span class="num">${d.getDate()}</span><span class="dots">${its.slice(0,4).map(x=>`<i class="k-${x.kind||"work"}"></i>`).join("")}${its.length>4?"<em>+</em>":""}${tc?`<b class="sq" title="${tc} task${tc>1?"s":""}"></b>`:""}</span>${dlc?`<span class="dlm">${ic("flag")}</span>`:""}</button>`}
+    const {ev,tk,dl}=dayInfo(ds),out=!inMonth(ds),hol=ev.find(x=>/^Public holiday/i.test(x.title));
+    const bars=[...ev.filter(x=>x!==hol).map(x=>`<i class="k-${x.kind||"work"}"></i>`),...dl.map(()=>`<i class="bdl"></i>`),...tk.map(()=>`<i class="btk"></i>`)];
+    const label=[ev.length&&`${ev.length} event${ev.length>1?"s":""}`,tk.length&&`${tk.length} task${tk.length>1?"s":""}`,dl.length&&`${dl.length} deadline${dl.length>1?"s":""}`].filter(Boolean).join(", ")||"nothing planned";
+    h+=`<button class="mday ${out?"out":""} ${ds===td?"today":""} ${ds===S.sel?"sel":""} ${hol?"hol":""}" data-sel="${ds}" aria-label="${fmt(d,{weekday:"long",day:1,month:"long"})}: ${label}"><span class="num">${d.getDate()}</span><span class="bars">${bars.slice(0,3).join("")}</span>${bars.length>3?`<span class="bmore">+${bars.length-3}</span>`:""}</button>`}
   h+=`</div></div>`;
-  const sd=fromYmd(S.sel),its=itemsFor(S.sel),tasks=S.tasks.filter(t=>t.date===S.sel),dls=deadlinesFor(S.sel);
-  h+=`<div class="mlist"><header class="mlh"><h2>${fmt(sd,{weekday:"long",day:1,month:"long"})}</h2><button class="ghost" data-goday="${S.sel}">Open day</button></header>`;
-  h+=its.length||tasks.length||dls.length?`<div class="week"><section class="wd">${dayList(S.sel,its,tasks,dls)}</section></div>`:`<div class="empty">Nothing planned</div>`;
-  $("#view").innerHTML=h+`</div>`;
+  // Always-open list: every day in this month (from today if it's the current month) that has something on.
+  const lastDay=new Date(first.getFullYear(),first.getMonth()+1,0).getDate(),fromDay=(first.getMonth()===new Date().getMonth()&&first.getFullYear()===new Date().getFullYear())?new Date().getDate():1;
+  let list="";
+  for(let dd=fromDay;dd<=lastDay;dd++){const d=new Date(first.getFullYear(),first.getMonth(),dd),ds=ymd(d),{ev,tk,dl}=dayInfo(ds);if(!ev.length&&!tk.length&&!dl.length)continue;
+    list+=`<section class="wd mag ${ds===S.sel?"selday":""} ${ds===td?"today":""}" id="mag-${ds}"><header data-goday="${ds}"><span class="d">${fmt(d,{weekday:"short",day:1,month:"short"})}</span><span class="c">${ds===td?"Today":""}</span></header>${dayList(ds,ev,tk,dl)}</section>`}
+  h+=`<h2>${ic("list","h")}${fromDay>1?"Still to come in ":""}${MONL[first.getMonth()]}</h2>`+(list?`<div class="week">${list}</div>`:`<div class="empty">Nothing planned</div>`);
+  $("#view").innerHTML=h;
+  if(S.sel){const el=document.getElementById("mag-"+S.sel);if(el)el.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});else toast("Nothing planned on "+fmt(fromYmd(S.sel),{weekday:"short",day:1,month:"short"}))}
 }
 
 /* ---------- details ---------- */

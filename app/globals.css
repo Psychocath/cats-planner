@@ -336,3 +336,14 @@ h2 .ic.h{margin-right:8px;color:var(--accent);width:1em;height:1em;vertical-alig
 .wi.dl .tm{color:var(--now);font-weight:700}
 
 .wmore{all:unset;cursor:pointer;font-size:.8rem;font-weight:700;color:var(--accent);padding:4px 4px 0}
+
+/* month: bars instead of dots and numbers */
+.mday{min-height:58px;padding:4px 3px}
+.mday .bars{display:grid;gap:2px;width:100%;padding:0 3px;box-sizing:border-box}
+.mday .bars i{display:block;height:4px;border-radius:2px;background:var(--kc)}
+.mday .bars i.btk{background:var(--muted);opacity:.55}
+.mday .bars i.bdl{background:var(--now)}
+.mday .bmore{font-size:.6rem;font-weight:700;color:var(--muted);line-height:1}
+.mday .dots,.mday .tc,.mday .dlm{display:none}
+.wd.selday{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.mag{scroll-margin-top:90px}
