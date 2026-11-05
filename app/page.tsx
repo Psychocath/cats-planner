@@ -13,22 +13,23 @@ const SHELL = `
 <div class="wrap">
   <header class="top">
     <div class="daterow">
-      <button class="icon" id="prev" aria-label="Previous">${icon('<path d="M15 6l-6 6 6 6"/>')}</button>
+      <button class="icon" id="out" aria-label="Zoom out">${icon('<path d="M15 6l-6 6 6 6"/>')}</button>
       <h1 id="dtitle"><small id="dsub"></small><span id="dmain"></span></h1>
-      <button class="ghost" id="todayBtn">Today</button>
+      <button class="icon" id="prev" aria-label="Previous">${icon('<path d="M15 6l-6 6 6 6"/>')}</button>
       <button class="icon" id="next" aria-label="Next">${icon('<path d="M9 6l6 6-6 6"/>')}</button>
+      <button class="icon" id="search" aria-label="Search">${icon('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>')}</button>
       <button class="icon" id="gear" aria-label="Settings">${GEAR}</button>
     </div>
+    <button class="nowbar" id="nowbar" hidden></button>
   </header>
   <div id="status" class="banner" hidden></div>
   <main id="view"></main>
 </div>
+<div id="dock" class="dock" hidden></div>
 <button class="fab" id="fab" aria-label="Add">${icon('<path d="M12 5v14M5 12h14"/>')}</button>
 <nav class="tabs" aria-label="Views"><div class="in">
   ${TAB("home", "Home", '<path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z"/>')}
-  ${TAB("day", "Today", '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>')}
-  ${TAB("week", "Week", '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>')}
-  ${TAB("month", "Month", '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01"/>')}
+  ${TAB("cal", "Calendar", '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01"/>')}
   ${TAB("tasks", "Tasks", '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>')}
 </div></nav>
 <div id="sheetRoot"></div>
