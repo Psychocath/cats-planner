@@ -6,13 +6,17 @@ import { safeEqual } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// Vercel Cron calls this every 5 minutes with "Authorization: Bearer <CRON_SECRET>".
+// Called every few minutes by a scheduler (Vercel Cron on Pro, or cron-job.org on Hobby).
 export async function GET(req: Request) {
   // With CRON_SECRET set, only Vercel Cron (which sends it) gets in. Without it, accept Vercel Cron's user agent;
   // the route only sends alerts that are due anyway and never returns planner data.
+  // An outside scheduler (cron-job.org) may pass the secret as ?key= since some can't set headers.
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization") || "";
-  const allowed = secret ? safeEqual(auth, `Bearer ${secret}`) : (req.headers.get("user-agent") || "").startsWith("vercel-cron/");
+  const key = new URL(req.url).searchParams.get("key") || "";
+  const allowed = secret
+    ? safeEqual(auth, `Bearer ${secret}`) || safeEqual(key, secret)
+    : (req.headers.get("user-agent") || "").startsWith("vercel-cron/");
   if (!allowed) return NextResponse.json({ error: "Not allowed." }, { status: 401 });
 
   const data = await loadData();
