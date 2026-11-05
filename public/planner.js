@@ -312,7 +312,11 @@ async function load(){
     if(!$("#sheetRoot").innerHTML&&document.activeElement?.id!=="quickIn")render();
   }catch(_){status("Can't reach your planner right now. Check your connection; changes will show once it's back.")}
 }
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")load()});
+// Pick up new versions: when the app comes back to the front, reload if a newer version is live.
+let myVersion=null;
+async function checkVersion(){try{const r=await fetch("/api/version",{cache:"no-store"});if(!r.ok)return;const v=(await r.json()).version;if(myVersion===null){myVersion=v;return}if(v!==myVersion&&!$("#sheetRoot").innerHTML&&!$("#focus"))location.reload()}catch(_){}}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){load();checkVersion()}});
+checkVersion();
 
 /* ---------- alerts + settings ---------- */
 const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);

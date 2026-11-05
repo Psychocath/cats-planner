@@ -1,27 +1,26 @@
-
-/* Layout: one column, sticky header with date + view switch, day view is a vertical timeline with time rail */
+/* The Cat Collective theme: dark bento on purple-black, magenta and violet accents (brand tokens). Light set derived for daytime. */
 :root{
-  --bg:#F3F5F2; --surface:#FFFFFF; --sunk:#E7EBE6; --line:#D3DAD2;
-  --ink:#1D2724; --muted:#5D6B66; --accent:#2E5E57; --accent-ink:#FFFFFF; --now:#C2410C;
-  --k-work:#2F6690; --k-work-bg:#E2ECF5;
-  --k-family:#9C4E7A; --k-family-bg:#F5E5EE;
-  --k-admin:#7A6421; --k-admin-bg:#F3EDD9;
-  --k-me:#3E7A3A; --k-me-bg:#E3F0E1;
-  --f-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
-  --f-body:"Atkinson Hyperlegible",ui-sans-serif,system-ui,sans-serif;
-  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --bg:#F7F5FB; --surface:#FFFFFF; --sunk:#EEE9F6; --line:#DDD5EA;
+  --ink:#1A1426; --muted:#6B6080; --accent:#A21CAF; --accent2:#7C3AED; --accent-ink:#FFFFFF; --now:#E11D48;
+  --k-work:#6D28D9; --k-work-bg:#EDE7FE;
+  --k-family:#A21CAF; --k-family-bg:#FBE8FD;
+  --k-admin:#92400E; --k-admin-bg:#FDF1D6;
+  --k-me:#0F766E; --k-me-bg:#DDF5F1;
+  --f-display:"Sora",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"DM Sans",ui-sans-serif,system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
   --ppm:1.1px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#141A18; --surface:#1C2422; --sunk:#232D2A; --line:#33403C;
-  --ink:#E6ECE9; --muted:#9AA9A3; --accent:#7FC4B8; --accent-ink:#0E1715; --now:#FB923C;
-  --k-work:#8DBDE6; --k-work-bg:#1E3142; --k-family:#E5A3C8; --k-family-bg:#3A2332;
-  --k-admin:#DCC27A; --k-admin-bg:#363019; --k-me:#9AD494; --k-me-bg:#1F3420; color-scheme:dark}}
+  --bg:#0C0912; --surface:#150F24; --sunk:#1F1735; --line:#2E2447;
+  --ink:#F3EEFA; --muted:#A89BBF; --accent:#D946EF; --accent2:#8B5CF6; --accent-ink:#12081A; --now:#FB7185;
+  --k-work:#A78BFA; --k-work-bg:#2A1F47; --k-family:#F0ABFC; --k-family-bg:#3A1840;
+  --k-admin:#FCD34D; --k-admin-bg:#3A2F12; --k-me:#5EEAD4; --k-me-bg:#11332F; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#141A18; --surface:#1C2422; --sunk:#232D2A; --line:#33403C;
-  --ink:#E6ECE9; --muted:#9AA9A3; --accent:#7FC4B8; --accent-ink:#0E1715; --now:#FB923C;
-  --k-work:#8DBDE6; --k-work-bg:#1E3142; --k-family:#E5A3C8; --k-family-bg:#3A2332;
-  --k-admin:#DCC27A; --k-admin-bg:#363019; --k-me:#9AD494; --k-me-bg:#1F3420; color-scheme:dark}
+  --bg:#0C0912; --surface:#150F24; --sunk:#1F1735; --line:#2E2447;
+  --ink:#F3EEFA; --muted:#A89BBF; --accent:#D946EF; --accent2:#8B5CF6; --accent-ink:#12081A; --now:#FB7185;
+  --k-work:#A78BFA; --k-work-bg:#2A1F47; --k-family:#F0ABFC; --k-family-bg:#3A1840;
+  --k-admin:#FCD34D; --k-admin-bg:#3A2F12; --k-me:#5EEAD4; --k-me-bg:#11332F; color-scheme:dark}
 html,body{height:auto}
 [hidden]{display:none!important}
 /* bottom tab bar */
@@ -235,3 +234,9 @@ textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var
 .focus.over .fc span{color:var(--now)}
 @media (prefers-reduced-motion:no-preference){.focus{animation:fadein .2s ease-out}@keyframes fadein{from{opacity:0}}.focus.over .ring{animation:pulse 1.4s ease-in-out infinite}@keyframes pulse{50%{transform:scale(1.03)}}}
 .confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50}
+
+/* brand flourishes: gradient on the main actions, magenta to violet */
+.primary,.fab,.quick button,.check[aria-pressed="true"],.mday.today .num,.opts button[aria-pressed="true"]{background-image:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent}
+.tabs button[aria-current="page"]{color:var(--accent)}
+.daterow h1,.sheet h3,.focus .ft,.login h1{letter-spacing:-.01em}
+.nn .fbtn{color:var(--bg)}

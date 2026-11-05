@@ -14,8 +14,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F3F5F2" },
-    { media: "(prefers-color-scheme: dark)", color: "#141A18" },
+    { media: "(prefers-color-scheme: light)", color: "#F7F5FB" },
+    { media: "(prefers-color-scheme: dark)", color: "#0C0912" },
   ],
 };
 
@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700&family=DM+Sans:opsz,wght@9..40,400;9..40,700&family=JetBrains+Mono:wght@500&display=swap"
         />
       </head>
       <body>{children}</body>
