@@ -240,3 +240,20 @@ textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var
 .tabs button[aria-current="page"]{color:var(--accent)}
 .daterow h1,.sheet h3,.focus .ft,.login h1{letter-spacing:-.01em}
 .nn .fbtn{color:var(--bg)}
+/* keep everything to device width: no sideways scrolling anywhere */
+html,body{max-width:100%;overflow-x:hidden}
+@supports (overflow:clip){html,body{overflow-x:clip}}
+.wrap,.sheet,.sheet .in,main,#view{max-width:100%;box-sizing:border-box;min-width:0}
+.sheet{overflow-x:hidden}
+.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.nn{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+input,select,textarea,button{max-width:100%;min-width:0;box-sizing:border-box}
+input[type="date"],input[type="time"]{-webkit-appearance:none;appearance:none;display:block;width:100%;min-height:44px;text-align:left}
+input[type="date"]::-webkit-date-and-time-value,input[type="time"]::-webkit-date-and-time-value{text-align:left}
+.daterow{min-width:0}
+.acts{min-width:0}
+.acts > *{min-width:0}
+.wi .tt,.row .tt{overflow-wrap:anywhere}
+.tabs .in{grid-template-columns:repeat(5,minmax(0,1fr))}
+.tabs button{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.focus .ring{width:min(72vw,320px)}
