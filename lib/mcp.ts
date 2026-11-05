@@ -127,7 +127,7 @@ const TOOLS = [
       properties: {
         collection: { type: "string", enum: COLS },
         id: str("Item id from get_plan or list_tasks."),
-        fields: { type: "object", description: "e.g. {title, date, start, end, kind, notes, steps ([text] or [{text, done}]; [] to clear), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
+        fields: { type: "object", description: "e.g. {title, date, start, end, kind, notes, until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
       },
     },
   },
@@ -189,8 +189,8 @@ async function call(name: string, a: Record<string, unknown>) {
         const date = addDays(start, k), wd = wdOf(date);
         const blocks = d.blocks.filter((b) => b.date === date).map((b) => ({ ...pick(b, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "notes", "steps"]), type: "block" }));
         const routines = d.routines
-          .filter((r) => ((r.days as number[]) || []).includes(wd) && !((r.skips as string[]) || []).includes(date))
-          .map((r) => ({ ...pick(r, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "notes", "steps"]), type: "routine" }));
+          .filter((r) => ((r.days as number[]) || []).includes(wd) && !((r.skips as string[]) || []).includes(date) && (!r.from || date >= String(r.from)) && (!r.until || date <= String(r.until)))
+          .map((r) => ({ ...pick(r, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "notes", "steps", "until"]), type: "routine" }));
         const tasks = d.tasks.filter((t) => t.date === date).map((t) => pick(t, ["id", "title", "priority", "mins", "actual", "done", "steps"]));
         days.push({
           date,
@@ -252,6 +252,8 @@ async function call(name: string, a: Record<string, unknown>) {
         if (next.date) need(DATE.test(String(next.date)), "Use dates like 2026-11-06.");
         if (f.kind !== undefined) next.kind = kindOf(f.kind);
         for (const k of ["remind2", "buffer"]) if (f[k] === null || f[k] === 0 && k === "buffer") delete next[k];
+        if (f.until === null || f.until === "") delete next.until;
+        else if (f.until !== undefined) need(DATE.test(String(f.until)), "Use dates like 2026-12-31 for until.");
         if (f.steps !== undefined) { const st = toSteps(f.steps); if (st && st.length) next.steps = st; else delete next.steps; }
         if (f.remind === null) delete next.remind;
         else if (f.remind !== undefined) next.remind = Math.max(-1, Math.min(10080, Math.round(Number(f.remind))));

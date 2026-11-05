@@ -44,7 +44,7 @@ async function remove(col,id){
 function itemsFor(dateStr){
   const d=fromYmd(dateStr),w=wd(d);
   const b=S.blocks.filter(x=>x.date===dateStr).map(x=>({...x,src:"blocks"}));
-  const r=S.routines.filter(x=>(x.days||[]).includes(w)&&!(x.skips||[]).includes(dateStr)).map(x=>({...x,src:"routines",date:dateStr}));
+  const r=S.routines.filter(x=>(x.days||[]).includes(w)&&(!x.from||dateStr>=x.from)&&(!x.until||dateStr<=x.until)&&!(x.skips||[]).includes(dateStr)).map(x=>({...x,src:"routines",date:dateStr}));
   return b.concat(r).sort((a,b)=>toMin(a.start)-toMin(b.start));
 }
 
@@ -204,7 +204,7 @@ function openDetails(col,rec,date){
     if(rec.mins||rec.actual)rows.push(["Time",(rec.mins?`Estimate ${rec.mins} min`:"")+(rec.actual?`${rec.mins?" · ":""}took ${rec.actual} min`:"")+(rec.mins&&ratio()!==1&&!rec.actual?` · likely ${Math.round(rec.mins*ratio())} min`:"")])}
   else{if(d)rows.push(["When",fmt(d,{weekday:"long",day:1,month:"long"})]);
     rows.push(["Time",`${rec.start}–${rec.end} · ${durFmt(rec.start,rec.end)}`]);
-    if(isR)rows.push(["Repeats",dayLabel(rec.days)]);
+    if(isR)rows.push(["Repeats",dayLabel(rec.days)+(rec.until?` · until ${fmt(fromYmd(rec.until),{day:1,month:"short"})} ${rec.until.slice(0,4)}`:"")]);
     rows.push(["Reminder",remindLabel(rec.remind)+(typeof rec.remind2==="number"?" + "+remindLabel(rec.remind2):"")]);
     if(rec.buffer)rows.push(["Buffer",rec.buffer+" min after"])}
   if(rec.notes)rows.push(["Notes",esc(rec.notes).replace(/\n/g,"<br>")]);
@@ -273,7 +273,7 @@ function renderTasks(){
 function renderRoutines(){
   const list=[...S.routines].sort((a,b)=>toMin(a.start)-toMin(b.start));
   let h=`<h2>Every week</h2>`;
-  h+=list.length?`<div class="list">${list.map(r=>`<div class="row k-${r.kind||"work"}"><button class="tt" data-open="routines:${r.id}"><div>${esc(r.title)}${r.example?'<span class="ex">Example</span>':""}</div><div class="meta">${r.start}–${r.end} · ${dayLabel(r.days)}</div></button><span class="chip">${KINDS[r.kind]||"Work"}</span></div>`).join("")}</div>`:`<div class="empty">No routines</div>`;
+  h+=list.length?`<div class="list">${list.map(r=>`<div class="row k-${r.kind||"work"}"><button class="tt" data-open="routines:${r.id}"><div>${esc(r.title)}${r.example?'<span class="ex">Example</span>':""}</div><div class="meta">${r.start}–${r.end} · ${dayLabel(r.days)}${r.until?(r.until<todayStr()?" · ended":" · until "+fmt(fromYmd(r.until),{day:1,month:"short"})+" "+r.until.slice(0,4)):""}</div></button><span class="chip">${KINDS[r.kind]||"Work"}</span></div>`).join("")}</div>`:`<div class="empty">No routines</div>`;
   $("#view").innerHTML=h;
 }
 function dayLabel(days){days=[...(days||[])].sort();if(days.length===7)return"Every day";if(days.join()==="1,2,3,4,5")return"Weekdays";if(days.join()==="6,7")return"Weekends";return days.map(d=>DAYN[d-1]).join(", ")}
@@ -295,7 +295,7 @@ function openSheet(type,rec,preset){
     f+=`<div class="two"><div class="f"><label for="fDate">Due (optional)</label><input id="fDate" type="date" value="${rec.date||preset.date||""}"></div><div class="f"><label for="fMins">Minutes (optional)</label><input id="fMins" type="number" min="5" step="5" inputmode="numeric" value="${rec.mins||""}"></div></div><div class="f"><span class="lb">Priority</span><div class="opts" id="fPri"><button type="button" data-p="top" aria-pressed="${(rec.priority||preset.priority)==="top"}">★ Top 3</button><button type="button" data-p="normal" aria-pressed="${(rec.priority||preset.priority)!=="top"}">Normal</button></div></div>`;
   }else{
     const days=rec.days||[1,2,3,4,5];
-    f+=`<div class="two"><div class="f"><label for="fStart">Start</label><input id="fStart" type="time" step="900" value="${rec.start||"08:00"}"></div><div class="f"><label for="fEnd">End</label><input id="fEnd" type="time" step="900" value="${rec.end||"08:30"}"></div></div><div class="f"><span class="lb">Repeats on</span><div class="opts" id="fDays">${DAYN.map((n,i)=>`<button type="button" data-d="${i+1}" aria-pressed="${days.includes(i+1)}">${n}</button>`).join("")}</div></div>`+kindOpts;
+    f+=`<div class="two"><div class="f"><label for="fStart">Start</label><input id="fStart" type="time" step="900" value="${rec.start||"08:00"}"></div><div class="f"><label for="fEnd">End</label><input id="fEnd" type="time" step="900" value="${rec.end||"08:30"}"></div></div><div class="f"><span class="lb">Repeats on</span><div class="opts" id="fDays">${DAYN.map((n,i)=>`<button type="button" data-d="${i+1}" aria-pressed="${days.includes(i+1)}">${n}</button>`).join("")}</div></div><div class="f"><label for="fUntil">Repeats until (optional)</label><input id="fUntil" type="date" value="${rec.until||""}"></div>`+kindOpts;
   }
   if(type!=="tasks"){const cur=rec.remind===undefined||rec.remind===null?"d":String(rec.remind);
     f+=`<div class="f"><span class="lb">Reminder</span><div class="opts" id="fRem">${REMINDS.map(([v,l])=>`<button type="button" data-r="${v}" aria-pressed="${String(v)===cur}">${v==="d"?l+" ("+S.lead+" min)":l}</button>`).join("")}</div></div><div class="f"><span class="lb">Second reminder</span><div class="opts" id="fRem2">${[["n","None"],[0,"At start"],[5,"5 min"],[15,"15 min"],[30,"30 min"],[60,"1 h"],[1440,"1 day"]].map(([v,l])=>`<button type="button" data-r="${v}" aria-pressed="${String(v)===(typeof rec.remind2==="number"?String(rec.remind2):"n")}">${l}</button>`).join("")}</div></div><div class="f"><span class="lb">Buffer after</span><div class="opts" id="fBuf">${[0,10,15,30].map(v=>`<button type="button" data-b="${v}" aria-pressed="${v===(rec.buffer??preset.buffer??0)}">${v?v+" min":"None"}</button>`).join("")}</div></div><div class="f"><label for="fNotes">Notes</label><textarea id="fNotes" rows="3">${esc(rec.notes||"")}</textarea></div>`}
@@ -316,7 +316,7 @@ function openSheet(type,rec,preset){
     else if(type==="tasks"){const p=(form.querySelector('#fPri [aria-pressed="true"]')||{}).dataset?.p||"normal",d=$("#fDate").value||null,mins=parseInt($("#fMins").value)||null;
       if(p==="top"&&d){const n=S.tasks.filter(x=>x.id!==rec.id&&x.date===d&&x.priority==="top"&&!x.done).length;if(n>=3){err.textContent="That day already has 3 top tasks. Finish or downgrade one first.";return}}
       data={...strip(rec),title:t,date:d,priority:p,mins,done:!!rec.done,createdAt:rec.createdAt||Date.now()}}
-    else{const s=$("#fStart").value,en=$("#fEnd").value,days=[...form.querySelectorAll('#fDays [aria-pressed="true"]')].map(b=>+b.dataset.d);if(!days.length){err.textContent="Pick at least one day.";return}if(toMin(en)<=toMin(s)){err.textContent="End time needs to be after the start time.";return}data={...strip(rec),title:t,start:s,end:en,days,kind:k,skips:rec.skips||[]}}
+    else{const s=$("#fStart").value,en=$("#fEnd").value,days=[...form.querySelectorAll('#fDays [aria-pressed="true"]')].map(b=>+b.dataset.d);if(!days.length){err.textContent="Pick at least one day.";return}if(toMin(en)<=toMin(s)){err.textContent="End time needs to be after the start time.";return}data={...strip(rec),title:t,start:s,end:en,days,kind:k,skips:rec.skips||[]};{const u=$("#fUntil").value;if(u)data.until=u;else delete data.until}}
     if(type!=="tasks"){const rv=(form.querySelector('#fRem [aria-pressed="true"]')||{}).dataset?.r||"d";if(rv==="d")delete data.remind;else data.remind=+rv;const r2=(form.querySelector('#fRem2 [aria-pressed="true"]')||{}).dataset?.r||"n";if(r2==="n")delete data.remind2;else data.remind2=+r2;const bf=+((form.querySelector('#fBuf [aria-pressed="true"]')||{}).dataset?.b||0);if(bf)data.buffer=bf;else delete data.buffer;const nt=$("#fNotes").value.trim();if(nt)data.notes=nt;else delete data.notes}
     if(type!=="routines"){const pend=$("#fStepIn").value.trim();if(pend)addStep();const st=[...form.querySelectorAll("#fSteps .srow input")].map(i=>({text:i.value.trim(),done:i.dataset.done==="1"})).filter(x=>x.text);if(st.length)data.steps=st;else delete data.steps}
     delete data.example;save(type,rec.id||uid(),data);closeSheet();toast(isNew?"Added":"Saved")};
