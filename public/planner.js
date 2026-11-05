@@ -1,0 +1,276 @@
+
+(function(){
+const KINDS={work:"Work",family:"Family",admin:"Admin",me:"Me time"};
+const DAYN=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const START_H=5, END_H=22;
+const S={work:{start:"09:00",end:"16:00"},view:"day",cur:new Date(),tasks:[],blocks:[],routines:[],db:null,live:false};
+S.cur.setHours(0,0,0,0);
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad=n=>String(n).padStart(2,"0");
+const ymd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const fromYmd=s=>{const[a,b,c]=s.split("-").map(Number);return new Date(a,b-1,c)};
+const wd=d=>((d.getDay()+6)%7)+1; // Mon=1..Sun=7
+const toMin=t=>{const[h,m]=(t||"0:0").split(":").map(Number);return h*60+m};
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],MONL=["January","February","March","April","May","June","July","August","September","October","November","December"],DAYL=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+const fmt=(d,o)=>{o=o||{};const p=[];if(o.weekday)p.push(o.weekday==="long"?DAYL[wd(d)-1]:DAYN[wd(d)-1]);if(o.day)p.push(d.getDate());if(o.month)p.push(o.month==="long"?MONL[d.getMonth()]:MON[d.getMonth()]);return p.join(" ")};
+const todayStr=()=>ymd(new Date());
+const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+
+function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2600)}
+function status(msg){const s=$("#status");s.textContent=msg||"";s.hidden=!msg}
+
+/* ---------- data ---------- */
+async function api(body){
+  const r=await fetch("/api/data",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+  if(r.status===401){location.href="/login";throw new Error("signed out")}
+  if(!r.ok){let m="Couldn't save. Check your connection and try again.";try{m=(await r.json()).error||m}catch(_){}throw new Error(m)}
+  return r.json();
+}
+async function save(col,id,data){
+  const list=S[col];const i=list.findIndex(x=>x.id===id);
+  const rec={...data,id};
+  if(i>=0)list[i]=rec;else list.push(rec);
+  render();
+  const body={...data};delete body.id;
+  try{await api({op:"set",col,id,data:body})}catch(e){toast(e.message);load()}
+}
+async function remove(col,id){
+  S[col]=S[col].filter(x=>x.id!==id);render();
+  try{await api({op:"delete",col,id})}catch(e){toast(e.message);load()}
+}
+function itemsFor(dateStr){
+  const d=fromYmd(dateStr),w=wd(d);
+  const b=S.blocks.filter(x=>x.date===dateStr).map(x=>({...x,src:"blocks"}));
+  const r=S.routines.filter(x=>(x.days||[]).includes(w)&&!(x.skips||[]).includes(dateStr)).map(x=>({...x,src:"routines",date:dateStr}));
+  return b.concat(r).sort((a,b)=>toMin(a.start)-toMin(b.start));
+}
+
+/* ---------- header ---------- */
+function renderHeader(){
+  document.querySelectorAll(".tabs button").forEach(b=>b.setAttribute("aria-current",b.dataset.v===S.view?"page":"false"));
+  const c=S.cur,isToday=ymd(c)===todayStr();
+  let sub="",main="";
+  if(S.view==="day"){const t=new Date();t.setHours(0,0,0,0);const diff=Math.round((c-t)/864e5);sub=diff===0?"Today":diff===1?"Tomorrow":diff===-1?"Yesterday":DAYL[wd(c)-1];main=fmt(c,{weekday:"short",day:1,month:"short"})}
+  else if(S.view==="week"){const m=addDays(c,1-wd(c)),s=addDays(m,6);sub="Week";main=fmt(m,{day:1,month:"short"})+" to "+fmt(s,{day:1,month:"short"})}
+  else if(S.view==="tasks"){sub=fmt(new Date(),{weekday:"long",day:1,month:"long"});main="Tasks"}
+  else{sub="Repeats every week";main="Routines"}
+  $("#dsub").textContent=sub;$("#dmain").textContent=main;
+  const nav=S.view==="day"||S.view==="week";
+  $("#prev").hidden=!nav;$("#next").hidden=!nav;$("#todayBtn").hidden=!nav||(S.view==="day"&&isToday)||(S.view==="week"&&ymd(addDays(c,1-wd(c)))===ymd(addDays(new Date(),1-wd(new Date()))));
+  $("#fab").textContent={day:"+ Block",week:"+ Block",tasks:"+ Task",routines:"+ Routine"}[S.view];
+}
+
+/* ---------- day ---------- */
+function layoutLanes(items){
+  const out=[];let cluster=[],clusterEnd=-1;
+  const flush=()=>{const lanes=[];cluster.forEach(it=>{let l=lanes.findIndex(e=>e<=toMin(it.start));if(l<0){l=lanes.length;lanes.push(0)}lanes[l]=toMin(it.end);it._lane=l});cluster.forEach(it=>it._lanes=lanes.length);out.push(...cluster);cluster=[]};
+  items.forEach(it=>{if(toMin(it.start)>=clusterEnd&&cluster.length)flush();cluster.push(it);clusterEnd=Math.max(clusterEnd,toMin(it.end))});
+  if(cluster.length)flush();return out;
+}
+function nowNext(ds){
+  const n=new Date(),m=n.getHours()*60+n.getMinutes(),its=itemsFor(ds);
+  const cur=its.filter(i=>toMin(i.start)<=m&&toMin(i.end)>m).pop(),nxt=its.find(i=>toMin(i.start)>m);
+  const card=(lab,it,empty)=>it?`<div class="k-${it.kind||"work"}" data-open="${it.src}:${it.id}" style="cursor:pointer"><span class="label">${lab}</span><div class="when">${it.start}–${it.end}${lab==="Next"?" · in "+inFmt(toMin(it.start)-m):""}</div><b>${esc(it.title)}</b></div>`:`<div><span class="label">${lab}</span><b class="free">${empty}</b></div>`;
+  return `<div class="nn">${card("Now",cur,"Free time")}${card("Next",nxt,"Nothing else today")}</div>`;
+}
+function busy(ds){const r=itemsFor(ds).map(i=>[toMin(i.start),toMin(i.end)]).sort((a,b)=>a[0]-b[0]),m=[];r.forEach(x=>{const l=m[m.length-1];if(l&&x[0]<=l[1])l[1]=Math.max(l[1],x[1]);else m.push([...x])});return m}
+function freeWork(ds){const ws=toMin(S.work.start),we=toMin(S.work.end);let free=we-ws;busy(ds).forEach(([a,b])=>{free-=Math.max(0,Math.min(b,we)-Math.max(a,ws))});return Math.max(0,free)}
+function firstGap(ds,mins){const ws=toMin(S.work.start),we=toMin(S.work.end);let t=ws;if(ds===todayStr()){const n=new Date(),nm=n.getHours()*60+n.getMinutes();t=Math.max(t,Math.ceil(nm/15)*15)}for(const[a,b]of busy(ds)){if(a-t>=mins&&t+mins<=we)return t;t=Math.max(t,b)}return t+mins<=we?t:null}
+const hm=m=>pad(Math.floor(m/60))+":"+pad(m%60);
+const inFmt=x=>x<60?x+" min":Math.floor(x/60)+" h"+(x%60?" "+(x%60)+" min":"");
+function renderDay(){
+  const ds=ymd(S.cur),isToday=ds===todayStr();
+  const dayTasks=S.tasks.filter(t=>t.date===ds);
+  const top=dayTasks.filter(t=>t.priority==="top").slice(0,3);
+  let h=isToday?nowNext(ds):"";
+  h+=`<h2>Top 3 for ${isToday?"today":fmt(S.cur,{weekday:"long"})}</h2><div class="top3">`;
+  h+=top.map((t,i)=>`<div class="t3 ${t.done?"done":""}"><span class="n">${i+1}</span><span class="tt">${esc(t.title)}${t.example?'<span class="ex">Example</span>':""}</span><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button></div>`).join("");
+  if(top.length<3)h+=`<button class="addline" data-addtop="${ds}">+ Add a top task${top.length?"":" (pick the 3 things that make today a win)"}</button>`;
+  h+=`</div>`;
+  const raw=itemsFor(ds),items=layoutLanes(raw);
+  const n=new Date(),nm=n.getHours()*60+n.getMinutes();
+  let sH=Math.min(7,Math.floor(toMin(S.work.start)/60)),eH=Math.max(18,Math.ceil(toMin(S.work.end)/60));
+  raw.forEach(i=>{sH=Math.min(sH,Math.floor(toMin(i.start)/60));eH=Math.max(eH,Math.ceil(toMin(i.end)/60))});
+  if(isToday){sH=Math.min(sH,n.getHours());eH=Math.max(eH,n.getHours()+1)}
+  sH=Math.max(0,sH);eH=Math.min(24,eH);
+  const ppm=1.6,height=(eH-sH)*60*ppm,y=m=>(m-sH*60)*ppm;
+  let rail="",grid="";
+  for(let hr=sH;hr<=eH;hr++){const top=y(hr*60);rail+=`<span style="top:${top}px">${pad(hr%24)}:00</span>`;grid+=`<div class="hr" style="top:${top}px"></div>`;if(hr<eH)grid+=`<div class="hr half" style="top:${y(hr*60+30)}px"></div><button class="slot" data-slot="${pad(hr)}:00" style="top:${top}px;height:${30*ppm}px" aria-label="Add block at ${pad(hr)}:00"></button><button class="slot" data-slot="${pad(hr)}:30" style="top:${y(hr*60+30)}px;height:${30*ppm}px" aria-label="Add block at ${pad(hr)}:30"></button>`}
+  {const ws=toMin(S.work.start),we=toMin(S.work.end);if(ws>sH*60)grid+=`<div class="off" style="top:0;height:${y(ws)}px"></div>`;if(we<eH*60)grid+=`<div class="off" style="top:${y(we)}px;height:${y(eH*60)-y(we)}px"></div>`;if(wd(S.cur)<=5)grid+=`<span class="wl" style="top:${y(ws)}px">Work day starts</span><span class="wl" style="top:${y(we)}px">Work day ends</span>`}
+  items.forEach(it=>{const s=Math.max(toMin(it.start),sH*60),e=Math.min(Math.max(toMin(it.end),s+15),eH*60);if(e<=s)return;const w=100/it._lanes,ht=(e-s)*ppm-2,short=ht<60;
+    grid+=`<button class="blk k-${it.kind||"work"} ${it.src==="routines"?"rt":""} ${short?"short":""}" data-open="${it.src}:${it.id}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><b>${esc(it.title)}</b><span class="tm">${it.src==="routines"?"↻ ":""}${it.start}${short?"":"–"+it.end}</span></button>`});
+  if(isToday&&nm>=sH*60&&nm<=eH*60)grid+=`<div class="now" style="top:${y(nm)}px"></div>`;
+  const fw=freeWork(ds);h+=`<h2>Plan</h2><p class="label" style="margin:0 0 6px">${wd(S.cur)<=5?(fw?inFmt(fw)+" free in your work day":"Work day fully booked")+" · ":""}Tap a gap to add · ↻ repeats</p>`;
+  h+=`<div class="tl" style="height:${height}px"><div class="rail">${rail}</div><div class="grid">${grid}</div></div>`;
+  if(!S.alertsHere)h+=`<div class="sendrow"><p>Get a phone alert ${S.lead} min before each block.</p><button class="ghost" data-settings="1">Turn on alerts</button></div>`;
+  $("#view").innerHTML=h;
+  if(isToday&&!renderDay._scrolled){renderDay._scrolled=true;const el=document.querySelector(".tl");if(el){const top=el.getBoundingClientRect().top+scrollY+y(Math.max(nm-60,sH*60))-180;if(top>200)scrollTo({top})}}
+}
+
+/* ---------- week ---------- */
+function renderWeek(){
+  const m=addDays(S.cur,1-wd(S.cur));let h=`<div class="week" style="margin-top:14px">`;
+  for(let i=0;i<7;i++){const d=addDays(m,i),ds=ymd(d),its=itemsFor(ds),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length;
+    h+=`<section class="wd ${ds===todayStr()?"today":""}"><header data-goday="${ds}"><span class="d">${fmt(d,{weekday:"short",day:1,month:"short"})}</span><span class="c">${tc?tc+" task"+(tc>1?"s":"")+" · ":""}${its.length} block${its.length===1?"":"s"}</span></header>`;
+    h+=its.length?its.map(it=>`<div class="wi k-${it.kind||"work"}"><span class="tm">${it.start}–${it.end}</span><span class="dot"></span><span class="tt">${esc(it.title)}</span></div>`).join(""):`<div class="wi"><span class="tt" style="color:var(--muted)">Nothing planned</span></div>`;
+    h+=`</section>`}
+  $("#view").innerHTML=h+"</div>";
+}
+
+/* ---------- tasks ---------- */
+function taskRow(t){const due=t.date?(t.date===todayStr()?"Today":fmt(fromYmd(t.date),{weekday:"short",day:1,month:"short"})):"No date";
+  return `<div class="row ${t.done?"done":""}"><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button><button class="tt" data-open="tasks:${t.id}"><div>${t.priority==="top"?'<span class="star">★</span> ':""}${esc(t.title)}${t.example?'<span class="ex">Example</span>':""}</div><div class="meta">${due}${t.mins?" · "+t.mins+" min":""}</div></button>${t.done?"":`<button class="plan" data-plan="${t.id}">Block it</button>`}</div>`}
+function renderTasks(){
+  const td=todayStr(),open=S.tasks.filter(t=>!t.done),done=S.tasks.filter(t=>t.done);
+  const byP=(a,b)=>(a.priority==="top"?0:1)-(b.priority==="top"?0:1)||(a.date||"9").localeCompare(b.date||"9");
+  const today=open.filter(t=>t.date&&t.date<=td).sort(byP),later=open.filter(t=>t.date&&t.date>td).sort(byP),inbox=open.filter(t=>!t.date).sort(byP);
+  const sec=(name,list,empty)=>`<h2>${name}</h2>`+(list.length?`<div class="list">${list.map(taskRow).join("")}</div>`:`<div class="empty">${empty}</div>`);
+  let h=`<form class="quick" id="quick"><input id="quickIn" placeholder="Brain dump a task…" autocomplete="off" aria-label="New task"><button type="submit">Add</button></form>`+sec("Today and overdue",today,"Nothing due today. Add a task, or pull one in from the inbox.")+sec("Inbox",inbox,"Tasks without a date land here.")+sec("Coming up",later,"No dated tasks after today.");
+  if(done.length)h+=`<details><summary>Done (${done.length})</summary><div class="list">${done.map(taskRow).join("")}</div></details>`;
+  if(S.tasks.some(t=>t.example)||S.blocks.some(t=>t.example)||S.routines.some(t=>t.example))h+=`<div class="sendrow"><p>Items marked Example were added to show how the planner works.</p><button class="ghost" id="clearEx">Clear examples</button></div>`;
+  $("#view").innerHTML=h;
+}
+
+/* ---------- routines ---------- */
+function renderRoutines(){
+  const list=[...S.routines].sort((a,b)=>toMin(a.start)-toMin(b.start));
+  let h=`<h2>Every week</h2>`;
+  h+=list.length?`<div class="list">${list.map(r=>`<div class="row k-${r.kind||"work"}"><button class="tt" data-open="routines:${r.id}"><div>${esc(r.title)}${r.example?'<span class="ex">Example</span>':""}</div><div class="meta">${r.start}–${r.end} · ${dayLabel(r.days)}</div></button><span class="chip">${KINDS[r.kind]||"Work"}</span></div>`).join("")}</div>`:`<div class="empty">Add the things that repeat, like drop-off, nap time or your admin hour, and they fill each day automatically.</div>`;
+  $("#view").innerHTML=h;
+}
+function dayLabel(days){days=[...(days||[])].sort();if(days.length===7)return"Every day";if(days.join()==="1,2,3,4,5")return"Weekdays";if(days.join()==="6,7")return"Weekends";return days.map(d=>DAYN[d-1]).join(", ")}
+
+function render(){renderHeader();({day:renderDay,week:renderWeek,tasks:renderTasks,routines:renderRoutines})[S.view]()}
+
+/* ---------- sheet ---------- */
+function closeSheet(){$("#sheetRoot").innerHTML=""}
+function openSheet(type,rec,preset){
+  const isNew=!rec;rec=rec||{};preset=preset||{};
+  const title={blocks:"time block",tasks:"task",routines:"routine"}[type];
+  let f=`<div class="f"><label for="fTitle">What</label><input id="fTitle" value="${esc(rec.title||preset.title||"")}" placeholder="${type==="tasks"?"Send Virlocept proposal":"Client call"}" autocomplete="off"></div>`;
+  const kind=rec.kind||preset.kind||"work";
+  const kindOpts=`<div class="f"><span class="lb">Type</span><div class="opts" id="fKind">${Object.entries(KINDS).map(([k,v])=>`<button type="button" data-k="${k}" aria-pressed="${k===kind}">${v}</button>`).join("")}</div></div>`;
+  if(type==="blocks"){
+    const st=rec.start||preset.start||"09:00",en=rec.end||preset.end||pad(Math.min(23,Math.floor(toMin(st)/60)+1))+":"+st.slice(3);
+    f+=`<div class="f"><label for="fDate">Day</label><input id="fDate" type="date" value="${rec.date||preset.date||ymd(S.cur)}"></div><div class="two"><div class="f"><label for="fStart">Start</label><input id="fStart" type="time" step="900" value="${st}"></div><div class="f"><label for="fEnd">End</label><input id="fEnd" type="time" step="900" value="${en}"></div></div>`+kindOpts;
+  }else if(type==="tasks"){
+    f+=`<div class="two"><div class="f"><label for="fDate">Due (optional)</label><input id="fDate" type="date" value="${rec.date||preset.date||""}"></div><div class="f"><label for="fMins">Minutes (optional)</label><input id="fMins" type="number" min="5" step="5" inputmode="numeric" value="${rec.mins||""}"></div></div><div class="f"><span class="lb">Priority</span><div class="opts" id="fPri"><button type="button" data-p="top" aria-pressed="${(rec.priority||preset.priority)==="top"}">★ Top 3</button><button type="button" data-p="normal" aria-pressed="${(rec.priority||preset.priority)!=="top"}">Normal</button></div></div>`;
+  }else{
+    const days=rec.days||[1,2,3,4,5];
+    f+=`<div class="two"><div class="f"><label for="fStart">Start</label><input id="fStart" type="time" step="900" value="${rec.start||"08:00"}"></div><div class="f"><label for="fEnd">End</label><input id="fEnd" type="time" step="900" value="${rec.end||"08:30"}"></div></div><div class="f"><span class="lb">Repeats on</span><div class="opts" id="fDays">${DAYN.map((n,i)=>`<button type="button" data-d="${i+1}" aria-pressed="${days.includes(i+1)}">${n}</button>`).join("")}</div></div>`+kindOpts;
+  }
+  const skipBtn=(type==="routines"&&preset.onDate)?`<button type="button" class="ghost" id="fSkip">Skip on ${fmt(fromYmd(preset.onDate),{weekday:"short",day:1,month:"short"})}</button>`:"";
+  $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${isNew?"New":"Edit"} ${title}"><form class="in" id="fForm"><h3>${isNew?"New":"Edit"} ${title}</h3>${f}<div class="err" id="fErr"></div><div class="acts"><button class="primary" type="submit">${isNew?"Add":"Save"}</button>${isNew?"":`<button type="button" class="danger" id="fDel">Delete</button>`}<button type="button" class="ghost" id="fCancel">Cancel</button></div>${skipBtn}</form></div>`;
+  const form=$("#fForm");
+  form.querySelectorAll(".opts").forEach(g=>g.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(g.id==="fDays")b.setAttribute("aria-pressed",b.getAttribute("aria-pressed")==="true"?"false":"true");else{g.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")}}));
+  $("#scrim").onclick=closeSheet;$("#fCancel").onclick=closeSheet;
+  if(!isNew){const del=$("#fDel");del.onclick=()=>{if(del.dataset.armed){remove(type,rec.id);closeSheet();toast("Deleted")}else{del.dataset.armed=1;del.textContent=type==="routines"?"Delete every week?":"Tap again to delete"}}}
+  if(skipBtn)$("#fSkip").onclick=()=>{save("routines",rec.id,{...strip(rec),skips:[...(rec.skips||[]),preset.onDate]});closeSheet();toast("Skipped for that day")};
+  setTimeout(()=>{if(isNew)$("#fTitle").focus()},50);
+  form.onsubmit=e=>{e.preventDefault();const err=$("#fErr");const t=$("#fTitle").value.trim();if(!t){err.textContent="Give it a name first.";return}
+    const k=(form.querySelector('#fKind [aria-pressed="true"]')||{}).dataset?.k||"work";
+    let data;
+    if(type==="blocks"){const s=$("#fStart").value,en=$("#fEnd").value,d=$("#fDate").value;if(!d||!s||!en){err.textContent="Pick a day, a start and an end time.";return}if(toMin(en)<=toMin(s)){err.textContent="End time needs to be after the start time.";return}data={...strip(rec),title:t,date:d,start:s,end:en,kind:k};if(preset.taskId)data.taskId=preset.taskId}
+    else if(type==="tasks"){const p=(form.querySelector('#fPri [aria-pressed="true"]')||{}).dataset?.p||"normal",d=$("#fDate").value||null,mins=parseInt($("#fMins").value)||null;
+      if(p==="top"&&d){const n=S.tasks.filter(x=>x.id!==rec.id&&x.date===d&&x.priority==="top"&&!x.done).length;if(n>=3){err.textContent="That day already has 3 top tasks. Finish or downgrade one first.";return}}
+      data={...strip(rec),title:t,date:d,priority:p,mins,done:!!rec.done,createdAt:rec.createdAt||Date.now()}}
+    else{const s=$("#fStart").value,en=$("#fEnd").value,days=[...form.querySelectorAll('#fDays [aria-pressed="true"]')].map(b=>+b.dataset.d);if(!days.length){err.textContent="Pick at least one day.";return}if(toMin(en)<=toMin(s)){err.textContent="End time needs to be after the start time.";return}data={...strip(rec),title:t,start:s,end:en,days,kind:k,skips:rec.skips||[]}}
+    delete data.example;save(type,rec.id||uid(),data);closeSheet();toast(isNew?"Added":"Saved")};
+}
+const strip=r=>{const o={...r};delete o.id;delete o.src;delete o._lane;delete o._lanes;return o};
+
+/* ---------- events ---------- */
+document.addEventListener("click",e=>{
+  const v=e.target.closest(".tabs button");if(v){location.hash=v.dataset.v;return}
+  const tg=e.target.closest("[data-toggle]");if(tg){const t=S.tasks.find(x=>x.id===tg.dataset.toggle);if(t)save("tasks",t.id,{...strip(t),done:!t.done});return}
+  const op=e.target.closest("[data-open]");if(op){const[col,id]=op.dataset.open.split(":");const r=S[col].find(x=>x.id===id);if(r)openSheet(col,r,col==="routines"&&S.view==="day"?{onDate:ymd(S.cur)}:{});return}
+  const at=e.target.closest("[data-addtop]");if(at){openSheet("tasks",null,{date:at.dataset.addtop,priority:"top"});return}
+  const sl=e.target.closest("[data-slot]");if(sl){openSheet("blocks",null,{start:sl.dataset.slot,date:ymd(S.cur)});return}
+  const pl=e.target.closest("[data-plan]");if(pl){const t=S.tasks.find(x=>x.id===pl.dataset.plan);const m=t.mins||60;let d=t.date&&t.date>=todayStr()?t.date:todayStr(),g=firstGap(d,m);if(g===null&&!t.date){for(let i=1;i<8&&g===null;i++){const dd=ymd(addDays(fromYmd(todayStr()),i));if(wd(fromYmd(dd))<=5){g=firstGap(dd,m);if(g!==null)d=dd}}}const st=g??toMin(S.work.start);openSheet("blocks",null,{title:t.title,date:d,start:hm(st),end:hm(Math.min(st+m,23*60+45)),taskId:t.id,kind:"work"});return}
+  const gd=e.target.closest("[data-goday]");if(gd){S.cur=fromYmd(gd.dataset.goday);location.hash="day";return}
+  if(e.target.closest("[data-settings]")){openSettings();return}
+  if(e.target.id==="clearEx"){const b=e.target;if(!b.dataset.armed){b.dataset.armed=1;b.textContent="Tap again to clear";return}["tasks","blocks","routines"].forEach(c=>S[c].filter(x=>x.example).forEach(x=>remove(c,x.id)));toast("Examples cleared")}
+});
+$("#prev").onclick=()=>{S.cur=addDays(S.cur,S.view==="week"?-7:-1);render()};
+$("#next").onclick=()=>{S.cur=addDays(S.cur,S.view==="week"?7:1);render()};
+$("#todayBtn").onclick=()=>{S.cur=new Date();S.cur.setHours(0,0,0,0);renderDay._scrolled=false;render()};
+$("#fab").onclick=()=>{if(S.view==="tasks")openSheet("tasks");else if(S.view==="routines")openSheet("routines");else{const d=ymd(S.cur),g=firstGap(d,60);openSheet("blocks",null,{date:d,start:g!==null?hm(g):S.work.start,end:g!==null?hm(g+60):hm(toMin(S.work.start)+60)})}};
+document.addEventListener("submit",e=>{if(e.target.id!=="quick")return;e.preventDefault();const i=$("#quickIn"),t=i.value.trim();if(!t)return;save("tasks",uid(),{title:t,date:null,priority:"normal",mins:null,done:false,createdAt:Date.now()});toast("Added to Inbox");setTimeout(()=>{const n=$("#quickIn");if(n)n.focus()},30)});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet()});
+function route(){const h=location.hash.slice(1);S.view=["day","week","tasks","routines"].includes(h)?h:"day";closeSheet();render()}
+addEventListener("hashchange",route);
+setInterval(()=>{if(S.view==="day"&&ymd(S.cur)===todayStr()&&!$("#sheetRoot").innerHTML)renderDay()},60000);
+route();
+
+/* ---------- store ---------- */
+async function load(){
+  try{
+    const r=await fetch("/api/data",{cache:"no-store"});
+    if(r.status===401){location.href="/login";return}
+    if(!r.ok)throw new Error();
+    const d=await r.json();
+    S.tasks=d.tasks;S.blocks=d.blocks;S.routines=d.routines;
+    S.work={start:d.settings.workStart,end:d.settings.workEnd};S.lead=d.settings.leadMin;
+    S.publicKey=d.alerts.publicKey;S.devices=d.alerts.devices;
+    status("");
+    if(!$("#sheetRoot").innerHTML&&document.activeElement?.id!=="quickIn")render();
+  }catch(_){status("Can't reach your planner right now. Check your connection; changes will show once it's back.")}
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")load()});
+
+/* ---------- alerts + settings ---------- */
+const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const installed=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+const pushSupported="serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window;
+let swReg=null;
+async function initSW(){
+  if(!("serviceWorker" in navigator))return;
+  try{swReg=await navigator.serviceWorker.register("/sw.js");const sub=await swReg.pushManager?.getSubscription();S.alertsHere=!!sub;S.endpoint=sub?.endpoint||null;render()}catch(_){}
+}
+function b64ToBytes(b){const p="=".repeat((4-b.length%4)%4),r=atob((b+p).replace(/-/g,"+").replace(/_/g,"/"));return Uint8Array.from(r,c=>c.charCodeAt(0))}
+async function pushApi(body){const r=await fetch("/api/push",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"Alerts couldn't be changed. Try again.");return j}
+async function enableAlerts(){
+  if(!S.publicKey)throw new Error("Alerts aren't set up on the server yet.");
+  if(Notification.permission==="denied")throw new Error("Notifications are blocked for this app. Turn them on in your phone's Settings, then try again.");
+  const perm=await Notification.requestPermission();
+  if(perm!=="granted")throw new Error("Alerts stay off until you allow notifications.");
+  const reg=swReg||await navigator.serviceWorker.ready;
+  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToBytes(S.publicKey)});
+  const j=await pushApi({action:"subscribe",subscription:sub.toJSON()});
+  S.alertsHere=true;S.endpoint=sub.endpoint;S.devices=j.devices;
+}
+async function disableAlerts(){
+  const reg=swReg||await navigator.serviceWorker.ready;const sub=await reg.pushManager.getSubscription();
+  if(sub){await pushApi({action:"unsubscribe",endpoint:sub.endpoint});await sub.unsubscribe()}
+  S.alertsHere=false;S.endpoint=null;
+}
+function openSettings(){
+  let alertHtml;
+  if(isIOS&&!installed)alertHtml=`<p class="hint">To get alerts on an iPhone, add this app to your Home Screen first: tap Share, then <b>Add to Home Screen</b>, and open it from there.</p>`;
+  else if(!pushSupported)alertHtml=`<p class="hint">This browser can't show alerts. Try Chrome, or the Home Screen app on your iPhone.</p>`;
+  else alertHtml=`<div class="acts"><button type="button" class="${S.alertsHere?"ghost":"primary"}" id="sAlerts">${S.alertsHere?"Turn off alerts on this device":"Turn on alerts on this device"}</button>${S.alertsHere?`<button type="button" class="ghost" id="sTest">Send a test</button>`:""}</div>`;
+  $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="Settings"><form class="in" id="sForm"><h3>Settings</h3>
+  <div class="two"><div class="f"><label for="sStart">Work day starts</label><input id="sStart" type="time" step="900" value="${S.work.start}"></div><div class="f"><label for="sEnd">Work day ends</label><input id="sEnd" type="time" step="900" value="${S.work.end}"></div></div>
+  <div class="f"><span class="lb">Alert me before each block</span><div class="opts" id="sLead">${[5,10,15,30].map(n=>`<button type="button" data-n="${n}" aria-pressed="${S.lead===n}">${n} min</button>`).join("")}</div></div>
+  <div class="f"><span class="lb">Phone alerts</span>${alertHtml}<p class="hint">${S.devices?`Alerts are on for ${S.devices} device${S.devices>1?"s":""}.`:"No devices get alerts yet."}</p></div>
+  <div class="err" id="sErr"></div>
+  <div class="acts"><button class="primary" type="submit">Save</button><button type="button" class="ghost" id="sCancel">Cancel</button><button type="button" class="danger" id="sOut">Log out</button></div></form></div>`;
+  const err=$("#sErr");
+  $("#scrim").onclick=closeSheet;$("#sCancel").onclick=closeSheet;
+  $("#sLead").onclick=e=>{const b=e.target.closest("button");if(!b)return;$("#sLead").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")};
+  const al=$("#sAlerts");if(al)al.onclick=async()=>{al.disabled=true;err.textContent="";try{S.alertsHere?await disableAlerts():await enableAlerts();toast(S.alertsHere?"Alerts are on":"Alerts are off");openSettings()}catch(e){err.textContent=e.message;al.disabled=false}};
+  const te=$("#sTest");if(te)te.onclick=async()=>{te.disabled=true;try{await pushApi({action:"test"});toast("Test sent. It should arrive in a few seconds.")}catch(e){err.textContent=e.message}te.disabled=false};
+  $("#sOut").onclick=async()=>{await fetch("/api/logout",{method:"POST"});location.href="/login"};
+  $("#sForm").onsubmit=async e=>{e.preventDefault();const st=$("#sStart").value,en=$("#sEnd").value,lead=+($("#sLead [aria-pressed=\"true\"]")?.dataset.n||10);
+    if(!st||!en||toMin(en)<=toMin(st)){err.textContent="The work day needs to end after it starts.";return}
+    try{const j=await api({op:"settings",data:{workStart:st,workEnd:en,leadMin:lead}});S.work={start:j.settings.workStart,end:j.settings.workEnd};S.lead=j.settings.leadMin;closeSheet();render();toast("Saved")}catch(e){err.textContent=e.message}};
+}
+$("#gear").onclick=openSettings;
+
+S.lead=10;S.alertsHere=false;S.devices=0;
+status("Loading your planner…");
+load();initSW();
+})();
