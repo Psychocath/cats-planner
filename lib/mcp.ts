@@ -26,12 +26,21 @@ const checkTimes = (start: unknown, end: unknown) => {
   need(TIME.test(String(start)) && TIME.test(String(end)), "Use 24-hour times like 09:30.");
   need(toMin(String(end)) > toMin(String(start)), "The end time must be after the start time.");
 };
+const toSteps = (v: unknown) =>
+  Array.isArray(v)
+    ? v
+        .map((x) => (typeof x === "string" ? { text: x.trim(), done: false } : { text: String((x as { text?: unknown })?.text || "").trim(), done: !!(x as { done?: unknown })?.done }))
+        .filter((x) => x.text)
+        .slice(0, 30)
+    : null;
 const extras = (a: Record<string, unknown>) => {
   const o: Record<string, unknown> = {};
   if (typeof a.remind === "number") o.remind = Math.max(-1, Math.min(10080, Math.round(a.remind)));
   if (typeof a.remind2 === "number") o.remind2 = Math.max(0, Math.min(10080, Math.round(a.remind2)));
   if (typeof a.buffer === "number" && a.buffer > 0) o.buffer = Math.min(120, Math.round(a.buffer));
   if (a.notes) o.notes = String(a.notes).slice(0, 2000);
+  const st = toSteps(a.steps);
+  if (st) o.steps = st;
   return o;
 };
 const kindOf = (k: unknown) => (KINDS.includes(String(k)) ? String(k) : "work");
@@ -71,6 +80,7 @@ const TOOLS = [
         remind2: { type: "integer", minimum: 0, maximum: 10080, description: "Optional second alert, minutes before the start." },
         buffer: { type: "integer", minimum: 0, maximum: 120, description: "Minutes of buffer kept free after it ends (optional)." },
         notes: str("Extra details (optional)."),
+        steps: { type: "array", items: { type: "string" }, description: "Small steps to break it into (optional)." },
       },
     },
   },
@@ -85,6 +95,7 @@ const TOOLS = [
         date: str("Due date, YYYY-MM-DD (optional)."),
         priority: { type: "string", enum: ["top", "normal"] },
         mins: { type: "integer", minimum: 5, description: "Estimated minutes (optional)." },
+        steps: { type: "array", items: { type: "string" }, description: "Small steps to break it into (optional)." },
       },
     },
   },
@@ -116,7 +127,7 @@ const TOOLS = [
       properties: {
         collection: { type: "string", enum: COLS },
         id: str("Item id from get_plan or list_tasks."),
-        fields: { type: "object", description: "e.g. {title, date, start, end, kind, notes, remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
+        fields: { type: "object", description: "e.g. {title, date, start, end, kind, notes, steps ([text] or [{text, done}]; [] to clear), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
       },
     },
   },
@@ -141,10 +152,10 @@ const TOOLS = [
   },
   {
     name: "update_settings",
-    description: "Change work hours or how many minutes before a block the phone alert fires.",
+    description: "Change work hours, the default reminder (minutes before), or the morning planning alert time.",
     inputSchema: {
       type: "object",
-      properties: { workStart: str("HH:MM"), workEnd: str("HH:MM"), leadMin: { type: "integer", minimum: 0, maximum: 60 } },
+      properties: { workStart: str("HH:MM"), workEnd: str("HH:MM"), leadMin: { type: "integer", minimum: 0, maximum: 60 }, morning: str("Daily 'Plan your day' alert time HH:MM, or empty to turn off.") },
     },
   },
 ];
@@ -176,11 +187,11 @@ async function call(name: string, a: Record<string, unknown>) {
       const days = [];
       for (let k = 0; k < n; k++) {
         const date = addDays(start, k), wd = wdOf(date);
-        const blocks = d.blocks.filter((b) => b.date === date).map((b) => ({ ...pick(b, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "notes"]), type: "block" }));
+        const blocks = d.blocks.filter((b) => b.date === date).map((b) => ({ ...pick(b, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "notes", "steps"]), type: "block" }));
         const routines = d.routines
           .filter((r) => ((r.days as number[]) || []).includes(wd) && !((r.skips as string[]) || []).includes(date))
-          .map((r) => ({ ...pick(r, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "notes"]), type: "routine" }));
-        const tasks = d.tasks.filter((t) => t.date === date).map((t) => pick(t, ["id", "title", "priority", "mins", "done"]));
+          .map((r) => ({ ...pick(r, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "notes", "steps"]), type: "routine" }));
+        const tasks = d.tasks.filter((t) => t.date === date).map((t) => pick(t, ["id", "title", "priority", "mins", "actual", "done", "steps"]));
         days.push({
           date,
           weekday: DAYN[wd - 1],
@@ -193,7 +204,7 @@ async function call(name: string, a: Record<string, unknown>) {
     }
     case "list_tasks": {
       const d = await loadData();
-      return d.tasks.filter((t) => a.include_done || !t.done).map((t) => pick(t, ["id", "title", "date", "priority", "mins", "done"]));
+      return d.tasks.filter((t) => a.include_done || !t.done).map((t) => pick(t, ["id", "title", "date", "priority", "mins", "actual", "done", "steps"]));
     }
     case "add_block": {
       need(String(a.title || "").trim(), "Give the block a title.");
@@ -208,7 +219,9 @@ async function call(name: string, a: Record<string, unknown>) {
       const date = a.date ? String(a.date) : null;
       need(!date || DATE.test(date), "Use dates like 2026-11-06.");
       const priority = a.priority === "top" ? "top" : "normal";
-      const rec = { id: uid(), title: String(a.title).trim(), date, priority, mins: Number(a.mins) || null, done: false, createdAt: Date.now() };
+      const rec: Item = { id: uid(), title: String(a.title).trim(), date, priority, mins: Number(a.mins) || null, done: false, createdAt: Date.now() };
+      const st = toSteps(a.steps);
+      if (st) rec.steps = st;
       await updateData((d) => {
         if (priority === "top" && date) {
           need(d.tasks.filter((t) => t.date === date && t.priority === "top" && !t.done).length < 3, "That day already has 3 Top tasks.");
@@ -239,6 +252,7 @@ async function call(name: string, a: Record<string, unknown>) {
         if (next.date) need(DATE.test(String(next.date)), "Use dates like 2026-11-06.");
         if (f.kind !== undefined) next.kind = kindOf(f.kind);
         for (const k of ["remind2", "buffer"]) if (f[k] === null || f[k] === 0 && k === "buffer") delete next[k];
+        if (f.steps !== undefined) { const st = toSteps(f.steps); if (st && st.length) next.steps = st; else delete next.steps; }
         if (f.remind === null) delete next.remind;
         else if (f.remind !== undefined) next.remind = Math.max(-1, Math.min(10080, Math.round(Number(f.remind))));
         delete next.example;
@@ -279,6 +293,7 @@ async function call(name: string, a: Record<string, unknown>) {
         if (a.workStart !== undefined) s.workStart = String(a.workStart);
         if (a.workEnd !== undefined) s.workEnd = String(a.workEnd);
         checkTimes(s.workStart, s.workEnd);
+        if (a.morning !== undefined) s.morning = a.morning && TIME.test(String(a.morning)) ? String(a.morning) : null;
         if (a.leadMin !== undefined) s.leadMin = Math.max(0, Math.min(60, Number(a.leadMin) || 0));
         d.settings = s;
         return { settings: s };

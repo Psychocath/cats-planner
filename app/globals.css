@@ -196,3 +196,42 @@ textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var
 /* buffer */
 .buf{position:absolute;left:4px;right:4px;border:1.5px dashed var(--line);border-radius:9px;background:transparent;pointer-events:none;display:flex;align-items:center;padding:0 10px;overflow:hidden}
 .buf span{font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+/* overload warning */
+.over{display:grid;gap:2px;margin:0 0 10px;padding:10px 12px;border-radius:12px;background:var(--k-family-bg);border-left:4px solid var(--k-family)}
+.over b{font-size:.92rem}
+.over span{font-size:.85rem;color:var(--muted)}
+/* Now card focus */
+.nn .fbtn{margin-top:10px;border:0;border-radius:999px;padding:6px 14px;font-weight:700;font-size:.82rem;background:var(--kc,var(--accent));color:var(--surface)}
+/* Top 3 title as button */
+.t3 .t3b{all:unset;flex:1;min-width:0;cursor:pointer;display:grid;gap:1px}
+.t3 .t3b small{font-size:.75rem;color:var(--muted)}
+.t3.done .t3b{text-decoration:line-through;color:var(--muted)}
+/* steps */
+.steps{display:grid;gap:6px;border-top:1px solid var(--line);padding-top:12px}
+.steps .sh{display:flex;justify-content:space-between;align-items:baseline}
+.steps .sh .cnt{font-size:.8rem;font-weight:700;color:var(--muted)}
+.step{display:flex;gap:10px;align-items:flex-start;padding:6px 2px;cursor:pointer}
+.step input{appearance:none;-webkit-appearance:none;width:22px;height:22px;flex:none;margin:0;border:2px solid var(--muted);border-radius:6px;display:grid;place-items:center;background:transparent;padding:0}
+.step input:checked{background:var(--accent);border-color:var(--accent)}
+.step input:checked::after{content:"✓";color:var(--accent-ink);font-size:.8rem;font-weight:700}
+.step.done span{text-decoration:line-through;color:var(--muted)}
+.stedit{display:grid;gap:6px}
+.srow{display:flex;gap:6px}
+.srow input{flex:1}
+.srm{border:1px solid var(--line);background:var(--surface);border-radius:10px;width:42px;font-size:1.1rem;color:var(--muted)}
+/* focus overlay */
+.focus{position:fixed;inset:0;z-index:40;background:var(--bg);display:grid;place-items:center;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:calc(24px + env(safe-area-inset-top,0px)) calc(24px + env(safe-area-inset-bottom,0px))}
+.focus .fin{width:100%;max-width:420px;display:grid;justify-items:center;gap:14px;text-align:center}
+.focus .ft{font-family:var(--f-display);font-size:1.6rem;margin:0;text-wrap:balance}
+.focus .ring{position:relative;width:min(78vw,320px);aspect-ratio:1;max-width:100%}
+.focus svg{width:100%;height:100%;transform:rotate(-90deg)}
+.focus .trk{fill:none;stroke:var(--sunk);stroke-width:10}
+.focus .prg{fill:none;stroke:var(--kc,var(--accent));stroke-width:10;stroke-linecap:round;transition:stroke-dashoffset .5s linear}
+.focus .fc{position:absolute;inset:0;display:grid;place-content:center;gap:4px}
+.focus .fc span{font-family:var(--f-mono);font-size:clamp(2.4rem,12vw,3.4rem);font-variant-numeric:tabular-nums}
+.focus .fc small{color:var(--muted);font-size:.85rem}
+.focus .fa{justify-content:center;width:100%}
+.focus .fa .primary{flex:0 1 auto;min-width:120px}
+.focus.over .fc span{color:var(--now)}
+@media (prefers-reduced-motion:no-preference){.focus{animation:fadein .2s ease-out}@keyframes fadein{from{opacity:0}}.focus.over .ring{animation:pulse 1.4s ease-in-out infinite}@keyframes pulse{50%{transform:scale(1.03)}}}
+.confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50}

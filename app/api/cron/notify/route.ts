@@ -42,7 +42,11 @@ export async function GET(req: Request) {
         return alertAt <= now.minute + 2 && alertAt > now.minute - 10;
       }),
   );
-  if (!due.length) return NextResponse.json({ ok: true, due: 0 });
+  // Morning planning nudge: one alert a day at the chosen time, with a short summary.
+  const mkey = `morning|${now.date}`;
+  const mAt = data.settings.morning ? toMin(data.settings.morning) : -1;
+  const morningDue = mAt >= 0 && !data.sent[mkey] && mAt <= now.minute + 2 && mAt > now.minute - 10;
+  if (!due.length && !morningDue) return NextResponse.json({ ok: true, due: 0 });
 
   const dead = new Set<string>();
   for (const { i, offset, key } of due) {
@@ -52,9 +56,18 @@ export async function GET(req: Request) {
     r.dead.forEach((e) => dead.add(e));
   }
 
+  if (morningDue) {
+    const today = itemsFor(data, now.date, now.wd);
+    const tops = data.tasks.filter((t) => t.priority === "top" && !t.done && t.date && String(t.date) <= now.date).length;
+    const parts = [`${today.length} on the plan`, tops ? `${tops} top task${tops > 1 ? "s" : ""}` : "no Top 3 yet"];
+    const r = await sendToAll(data.subs, { title: "Plan your day", body: parts.join(" · "), tag: mkey }, data);
+    r.dead.forEach((e) => dead.add(e));
+  }
+
   const weekAgo = Date.now() - 7 * 864e5;
   await updateData((d) => {
     due.forEach(({ key }) => (d.sent[key] = Date.now()));
+    if (morningDue) d.sent[mkey] = Date.now();
     for (const k of Object.keys(d.sent)) if (d.sent[k] < weekAgo) delete d.sent[k];
     if (dead.size) d.subs = d.subs.filter((s) => !dead.has(s.endpoint));
   });

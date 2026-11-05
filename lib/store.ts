@@ -3,7 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 
 export type Item = Record<string, unknown> & { id: string };
-export type Settings = { workStart: string; workEnd: string; leadMin: number };
+export type Settings = { workStart: string; workEnd: string; leadMin: number; morning?: string | null };
 export type PushSub = { endpoint: string; keys: { p256dh: string; auth: string }; addedAt: number };
 export type Data = {
   tasks: Item[];
