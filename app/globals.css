@@ -257,3 +257,30 @@ input[type="date"]::-webkit-date-and-time-value,input[type="time"]::-webkit-date
 .tabs .in{grid-template-columns:repeat(5,minmax(0,1fr))}
 .tabs button{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .focus .ring{width:min(72vw,320px)}
+/* home */
+.hero{margin-top:14px;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:8px}
+.hero > *{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px;min-width:0}
+.clk{display:grid;gap:2px;background-image:linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,transparent),color-mix(in srgb,var(--accent2) 14%,transparent))}
+.clk b{font-family:var(--f-mono);font-size:clamp(2.2rem,11vw,3rem);line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.clk .hd{font-size:.88rem;color:var(--muted)}
+.lb{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.wx{display:grid;gap:4px;align-content:start}
+.wxt{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.wxt b{font-family:var(--f-display);font-size:1.9rem;line-height:1}
+.wxt span{font-size:.9rem}
+.wxm{font-size:.75rem;color:var(--muted);line-height:1.4}
+.dayp{margin-top:10px;display:grid;gap:6px}
+.dpl{display:flex;justify-content:space-between;font-size:.8rem;color:var(--muted);font-weight:700}
+.dayp .bar{height:8px;border-radius:999px;background:var(--sunk);overflow:hidden}
+.dayp .bar span{display:block;height:100%;border-radius:999px;background-image:linear-gradient(90deg,var(--accent),var(--accent2))}
+.qa{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}
+.qa button{border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:12px 4px;font-weight:700;font-size:.85rem;color:var(--ink)}
+.qa button:first-child{background-image:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accent-ink);border-color:transparent}
+.qa button:active{transform:scale(.97)}
+.hgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:8px}
+.hcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;gap:2px;cursor:pointer;min-width:0}
+.hcard b{font-family:var(--f-display);font-size:1.4rem}
+.hcard small{color:var(--muted);font-size:.78rem}
+.mut{color:var(--muted)}
+.small{font-size:.8rem;margin:8px 0 0}
+@media (max-width:340px){.hero{grid-template-columns:1fr}.qa{grid-template-columns:repeat(2,minmax(0,1fr))}}

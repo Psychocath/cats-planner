@@ -53,7 +53,8 @@ function renderHeader(){
   document.querySelectorAll(".tabs button").forEach(b=>b.setAttribute("aria-current",b.dataset.v===S.view?"page":"false"));
   const c=S.cur,isToday=ymd(c)===todayStr();
   let sub="",main="";
-  if(S.view==="day"){const t=new Date();t.setHours(0,0,0,0);const diff=Math.round((c-t)/864e5);sub=diff===0?"Today":diff===1?"Tomorrow":diff===-1?"Yesterday":DAYL[wd(c)-1];main=fmt(c,{weekday:"short",day:1,month:"short"})}
+  if(S.view==="home"){sub="The Cat Collective";main="Cat's Planner"}
+  else if(S.view==="day"){const t=new Date();t.setHours(0,0,0,0);const diff=Math.round((c-t)/864e5);sub=diff===0?"Today":diff===1?"Tomorrow":diff===-1?"Yesterday":DAYL[wd(c)-1];main=fmt(c,{weekday:"short",day:1,month:"short"})}
   else if(S.view==="week"){const m=addDays(c,1-wd(c)),s=addDays(m,6);sub="Week";main=fmt(m,{day:1,month:"short"})+" to "+fmt(s,{day:1,month:"short"})}
   else if(S.view==="month"){sub=String(c.getFullYear());main=MONL[c.getMonth()]}
   else if(S.view==="tasks"){sub=fmt(new Date(),{weekday:"long",day:1,month:"long"});main="Tasks"}
@@ -61,7 +62,46 @@ function renderHeader(){
   $("#dsub").textContent=sub;$("#dmain").textContent=main;
   const nav=S.view==="day"||S.view==="week"||S.view==="month";
   $("#prev").hidden=!nav;$("#next").hidden=!nav;$("#todayBtn").hidden=!nav||(S.view==="day"&&isToday)||(S.view==="week"&&ymd(addDays(c,1-wd(c)))===ymd(addDays(new Date(),1-wd(new Date()))))||(S.view==="month"&&c.getMonth()===new Date().getMonth()&&c.getFullYear()===new Date().getFullYear());
-  $("#fab").textContent={day:"+ Block",week:"+ Block",month:"+ Block",tasks:"+ Task",routines:"+ Routine"}[S.view];
+  $("#fab").textContent={home:"+ Block",day:"+ Block",week:"+ Block",month:"+ Block",tasks:"+ Task",routines:"+ Routine"}[S.view];
+}
+
+/* ---------- home ---------- */
+const WX={0:"Clear",1:"Mostly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Fog",51:"Light drizzle",53:"Drizzle",55:"Heavy drizzle",61:"Light rain",63:"Rain",65:"Heavy rain",66:"Freezing rain",67:"Freezing rain",71:"Light snow",73:"Snow",75:"Heavy snow",80:"Showers",81:"Showers",82:"Heavy showers",95:"Thunderstorms",96:"Thunderstorms",99:"Thunderstorms"};
+S.wx=null;
+async function loadWeather(force){
+  if(S.wx&&!force&&Date.now()-S.wx.at<15*60000)return;
+  const lat=-33.9249,lon=18.4241; // Cape Town
+  try{const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Africa%2FJohannesburg&forecast_days=1`);
+    if(!r.ok)throw 0;const j=await r.json();
+    S.wx={at:Date.now(),t:Math.round(j.current.temperature_2m),feels:Math.round(j.current.apparent_temperature),code:j.current.weather_code,wind:Math.round(j.current.wind_speed_10m),hi:Math.round(j.daily.temperature_2m_max[0]),lo:Math.round(j.daily.temperature_2m_min[0]),rain:j.daily.precipitation_probability_max[0]};
+  }catch(_){S.wx={at:Date.now(),err:1}}
+  if(S.view==="home"&&!$("#sheetRoot").innerHTML)renderHome();
+}
+function upcomingAlerts(ds){
+  const n=new Date(),m=n.getHours()*60+n.getMinutes(),out=[];
+  itemsFor(ds).forEach(it=>{[it.remind??S.lead,it.remind2].forEach(r=>{if(typeof r!=="number"||r<0)return;const at=toMin(it.start)-r;if(at>=m&&at<24*60)out.push({at,it,r})})});
+  return out.sort((a,b)=>a.at-b.at).slice(0,4);
+}
+function greet(h){return h<12?"Good morning":h<17?"Good afternoon":"Good evening"}
+function renderHome(){
+  const n=new Date(),ds=todayStr(),m=n.getHours()*60+n.getMinutes(),its=itemsFor(ds);
+  const top=S.tasks.filter(t=>t.priority==="top"&&(t.date===ds||(t.date&&t.date<ds&&!t.done))).slice(0,3),nDone=top.filter(t=>t.done).length;
+  const ws=toMin(S.work.start),we=toMin(S.work.end),wpct=wd(n)<=5?Math.max(0,Math.min(100,Math.round((m-ws)/(we-ws)*100))):null;
+  const left=its.filter(i=>toMin(i.end)>m).length,fw=freeWork(ds);
+  let wx;
+  if(!S.wx)wx=`<div class="wx"><span class="lb">Cape Town</span><b class="free">Loading weather</b></div>`;
+  else if(S.wx.err)wx=`<div class="wx"><span class="lb">Cape Town</span><b class="free">Weather unavailable</b></div>`;
+  else wx=`<div class="wx"><span class="lb">Cape Town</span><div class="wxt"><b>${S.wx.t}°</b><span>${WX[S.wx.code]||"—"}</span></div><div class="wxm">H ${S.wx.hi}° · L ${S.wx.lo}° · Rain ${S.wx.rain??0}% · Wind ${S.wx.wind} km/h</div></div>`;
+  let h=`<section class="hero"><div class="clk"><span class="lb">${greet(n.getHours())}, Cat</span><b id="hClock">${pad(n.getHours())}:${pad(n.getMinutes())}</b><span class="hd">${fmt(n,{weekday:"long",day:1,month:"long"})}</span></div>${wx}</section>`;
+  if(wpct!==null)h+=`<div class="dayp"><div class="dpl"><span>Work day</span><span>${m<ws?"Starts "+S.work.start:m>=we?"Finished":inFmt(we-m)+" left"}</span></div><div class="bar"><span style="width:${wpct}%"></span></div></div>`;
+  h+=`<div class="qa"><button data-qa="block">+ Block</button><button data-qa="task">+ Task</button><button data-qa="focus">Focus</button><button data-qa="routines">Routines</button></div>`;
+  h+=nowNext(ds);
+  h+=`<div class="hgrid"><section class="hcard" data-v-go="day"><span class="lb">Today</span><b>${left}</b><small>${left===1?"item":"items"} still to come</small></section><section class="hcard" data-v-go="day"><span class="lb">Free in work day</span><b>${wd(n)<=5?inFmt(fw)||"0 min":"Day off"}</b><small>${wd(n)<=5?"after blocks and buffers":"Weekend"}</small></section></div>`;
+  h+=`<div class="t3h"><h2>Top 3</h2>${top.length?`<span class="cnt ${nDone===top.length?"all":""}">${nDone===top.length?"✓ ":""}${nDone} of ${top.length} done</span>`:""}</div><div class="top3">${top.map((t,i)=>`<div class="t3 ${t.done?"done":""}"><span class="n">${i+1}</span><button class="tt t3b" data-open="tasks:${t.id}">${esc(t.title)}</button><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button></div>`).join("")}${top.length<3?`<button class="addline" data-addtop="${ds}">+ Top task</button>`:""}</div>`;
+  const al=upcomingAlerts(ds);
+  h+=`<h2>Reminders</h2>`+(al.length?`<div class="week"><section class="wd">${al.map(a=>`<button class="wi k-${a.it.kind||"work"}" data-open="${a.it.src}:${a.it.id}:${ds}"><span class="tm">${hm(a.at)}</span><span class="dot"></span><span class="tt">${esc(a.it.title)} <span class="mut">· ${a.r===0?"at start":inFmt(a.r)+" before"}</span></span></button>`).join("")}</section></div>`:`<div class="empty">No more reminders today</div>`)+(S.alertsHere?"":`<p class="mut small">Phone alerts are off on this device.</p>`);
+  $("#view").innerHTML=h;
+  loadWeather();
 }
 
 /* ---------- day ---------- */
@@ -227,7 +267,7 @@ function renderRoutines(){
 }
 function dayLabel(days){days=[...(days||[])].sort();if(days.length===7)return"Every day";if(days.join()==="1,2,3,4,5")return"Weekdays";if(days.join()==="6,7")return"Weekends";return days.map(d=>DAYN[d-1]).join(", ")}
 
-function render(){renderHeader();({day:renderDay,week:renderWeek,month:renderMonth,tasks:renderTasks,routines:renderRoutines})[S.view]()}
+function render(){renderHeader();({home:renderHome,day:renderDay,week:renderWeek,month:renderMonth,tasks:renderTasks,routines:renderRoutines})[S.view]()}
 
 /* ---------- sheet ---------- */
 function closeSheet(){$("#sheetRoot").innerHTML=""}
@@ -282,6 +322,8 @@ document.addEventListener("click",e=>{
   const at=e.target.closest("[data-addtop]");if(at){openSheet("tasks",null,{date:at.dataset.addtop,priority:"top"});return}
   const sl=e.target.closest("[data-slot]");if(sl){openSheet("blocks",null,{start:sl.dataset.slot,date:ymd(S.cur)});return}
   const pl=e.target.closest("[data-plan]");if(pl){const t=S.tasks.find(x=>x.id===pl.dataset.plan);const m=t.mins||60;let d=t.date&&t.date>=todayStr()?t.date:todayStr(),g=firstGap(d,m);if(g===null&&!t.date){for(let i=1;i<8&&g===null;i++){const dd=ymd(addDays(fromYmd(todayStr()),i));if(wd(fromYmd(dd))<=5){g=firstGap(dd,m);if(g!==null)d=dd}}}const st=g??toMin(S.work.start);openSheet("blocks",null,{title:t.title,date:d,start:hm(st),end:hm(Math.min(st+m,23*60+45)),taskId:t.id,kind:"work"});return}
+  const qa=e.target.closest("[data-qa]");if(qa){const a=qa.dataset.qa;if(a==="block"){const d=todayStr(),g=firstGap(d,60);openSheet("blocks",null,{date:d,start:g!==null?hm(g):S.work.start,end:g!==null?hm(g+60):hm(toMin(S.work.start)+60)})}else if(a==="task")openSheet("tasks");else if(a==="routines")location.hash="routines";else if(a==="focus"){const ds=todayStr(),n=new Date(),mm=n.getHours()*60+n.getMinutes(),cur=itemsFor(ds).filter(i=>toMin(i.start)<=mm&&toMin(i.end)>mm).pop();if(cur)startFocus(cur.src,S[cur.src].find(x=>x.id===cur.id),ds);else{const t=S.tasks.find(x=>x.priority==="top"&&!x.done&&x.date&&x.date<=ds)||S.tasks.find(x=>!x.done&&x.date===ds);if(t)startFocus("tasks",t,ds);else startFocus("tasks",{id:"_free",title:"Focus session",mins:25},ds)}}return}
+  const vg=e.target.closest("[data-v-go]");if(vg){S.cur=new Date();S.cur.setHours(0,0,0,0);location.hash=vg.dataset.vGo;return}
   const gd=e.target.closest("[data-goday]");if(gd){S.cur=fromYmd(gd.dataset.goday);location.hash="day";return}
   if(e.target.closest("[data-settings]")){openSettings();return}
   if(e.target.id==="clearEx"){const b=e.target;if(!b.dataset.armed){b.dataset.armed=1;b.textContent="Tap again to clear";return}["tasks","blocks","routines"].forEach(c=>S[c].filter(x=>x.example).forEach(x=>remove(c,x.id)));toast("Examples cleared")}
@@ -293,9 +335,9 @@ $("#todayBtn").onclick=()=>{S.cur=new Date();S.cur.setHours(0,0,0,0);S.sel=null;
 $("#fab").onclick=()=>{if(S.view==="tasks")openSheet("tasks");else if(S.view==="routines")openSheet("routines");else{const d=S.view==="month"&&S.sel?S.sel:ymd(S.cur),g=firstGap(d,60);openSheet("blocks",null,{date:d,start:g!==null?hm(g):S.work.start,end:g!==null?hm(g+60):hm(toMin(S.work.start)+60)})}};
 document.addEventListener("submit",e=>{if(e.target.id!=="quick")return;e.preventDefault();const i=$("#quickIn"),t=i.value.trim();if(!t)return;save("tasks",uid(),{title:t,date:null,priority:"normal",mins:null,done:false,createdAt:Date.now()});toast("Added to Inbox");setTimeout(()=>{const n=$("#quickIn");if(n)n.focus()},30)});
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet()});
-function route(){const h=location.hash.slice(1);S.view=["day","week","month","tasks","routines"].includes(h)?h:"day";closeSheet();render()}
+function route(){const h=location.hash.slice(1);S.view=["home","day","week","month","tasks","routines"].includes(h)?h:"home";closeSheet();render()}
 addEventListener("hashchange",route);
-setInterval(()=>{if(S.view==="day"&&ymd(S.cur)===todayStr()&&!$("#sheetRoot").innerHTML)renderDay()},60000);
+setInterval(()=>{if($("#sheetRoot").innerHTML||$("#focus"))return;if(S.view==="day"&&ymd(S.cur)===todayStr())renderDay();else if(S.view==="home")renderHome()},30000);
 route();
 
 /* ---------- store ---------- */
