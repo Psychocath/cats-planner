@@ -350,6 +350,19 @@ function layoutLanes(items){
   items.forEach(it=>{if(toMin(it.start)>=clusterEnd&&cluster.length)flush();cluster.push(it);clusterEnd=Math.max(clusterEnd,toMin(it.end))});
   if(cluster.length)flush();return out;
 }
+/* Time scale for the Day timeline. Normally 1.4px a minute, but any block
+   shorter than MIN px gets its minutes stretched so its title fits, and the
+   rest of the day shifts down instead of the blocks sitting on top of each other. */
+function stretchScale(from,to,ppm,spans,MIN=40){
+  const pts=[...new Set([from,to,...spans.flat()])].filter(m=>m>=from&&m<=to).sort((a,b)=>a-b);
+  const seg=pts.slice(1).map((m,i)=>(m-pts[i])*ppm);
+  spans.forEach(([a,b])=>{const i=pts.indexOf(a),j=pts.indexOf(b);if(i<0||j<=i)return;
+    let px=0;for(let k=i;k<j;k++)px+=seg[k];if(px>=MIN)return;
+    const add=MIN-px,mins=b-a;for(let k=i;k<j;k++)seg[k]+=add*((pts[k+1]-pts[k])/mins)});
+  const acc=[0];seg.forEach(v=>acc.push(acc[acc.length-1]+v));
+  return m=>{if(m<=from)return(m-from)*ppm;if(m>=to)return acc[acc.length-1]+(m-to)*ppm;
+    let k=0;while(pts[k+1]<m)k++;return acc[k]+seg[k]*(m-pts[k])/(pts[k+1]-pts[k])};
+}
 function renderDay(){
   const ds=ymd(S.cur),isToday=ds===todayStr(),work=isWorkday(S.cur);
   let h=dayStrip()+layersHtml()+`<div id="pane">`;
@@ -362,15 +375,15 @@ function renderDay(){
   raw.forEach(i=>{sH=Math.min(sH,Math.floor(toMin(i.start)/60));eH=Math.max(eH,Math.ceil(toMin(i.end)/60))});
   if(isToday){sH=Math.min(sH,new Date().getHours());eH=Math.max(eH,new Date().getHours()+1)}
   sH=Math.max(0,sH);eH=Math.min(24,eH);
-  const ppm=1.4,height=(eH-sH)*60*ppm,y=m=>(m-sH*60)*ppm;
+  const ppm=1.4,y=stretchScale(sH*60,eH*60,ppm,items.map(it=>{const a=Math.max(toMin(it.start),sH*60);return[a,Math.min(Math.max(toMin(it.end),a+15),eH*60)]})),height=y(eH*60);
   let rail="",grid="";
   for(let hr=sH;hr<=eH;hr++){const top=y(hr*60);rail+=`<span style="top:${top}px">${pad(hr%24)}:00</span>`;grid+=`<div class="hr" style="top:${top}px"></div>`;
-    if(hr<eH)grid+=`<div class="hr half" style="top:${y(hr*60+30)}px"></div><button class="slot" data-slot="${pad(hr)}:00" style="top:${top}px;height:${30*ppm}px" aria-label="Add block at ${pad(hr)}:00"></button><button class="slot" data-slot="${pad(hr)}:30" style="top:${y(hr*60+30)}px;height:${30*ppm}px" aria-label="Add block at ${pad(hr)}:30"></button>`}
+    if(hr<eH)grid+=`<div class="hr half" style="top:${y(hr*60+30)}px"></div><button class="slot" data-slot="${pad(hr)}:00" style="top:${top}px;height:${y(hr*60+30)-top}px" aria-label="Add block at ${pad(hr)}:00"></button><button class="slot" data-slot="${pad(hr)}:30" style="top:${y(hr*60+30)}px;height:${y(hr*60+60)-y(hr*60+30)}px" aria-label="Add block at ${pad(hr)}:30"></button>`}
   {const ws=toMin(S.work.start),we=toMin(S.work.end);if(ws>sH*60)grid+=`<div class="off" style="top:0;height:${y(ws)}px"></div>`;if(we<eH*60)grid+=`<div class="off" style="top:${y(we)}px;height:${y(eH*60)-y(we)}px"></div>`;if(work)grid+=`<span class="wl" style="top:${y(ws)}px">Work day starts</span><span class="wl" style="top:${y(we)}px">Work day ends</span>`}
-  if(work)gaps(ds,30).forEach(([a,b])=>{grid+=`<button class="gap" data-slot="${hm(a)}" style="top:${y(a)+3}px;height:${(b-a)*ppm-6}px" aria-label="${inFmt(b-a)} free from ${hm(a)}. Add a block">${ic("plus")}${inFmt(b-a)} free</button>`});
-  items.forEach(it=>{if(!it.buffer)return;const bs=toMin(it.end),be=Math.min(bs+it.buffer,eH*60);if(be>bs)grid+=`<div class="buf" style="top:${y(bs)+1}px;height:${(be-bs)*ppm-2}px"><span>Buffer ${it.buffer} min</span></div>`});
+  if(work)gaps(ds,30).forEach(([a,b])=>{grid+=`<button class="gap" data-slot="${hm(a)}" style="top:${y(a)+3}px;height:${y(b)-y(a)-6}px" aria-label="${inFmt(b-a)} free from ${hm(a)}. Add a block">${ic("plus")}${inFmt(b-a)} free</button>`});
+  items.forEach(it=>{if(!it.buffer)return;const bs=toMin(it.end),be=Math.min(bs+it.buffer,eH*60);if(be>bs)grid+=`<div class="buf" style="top:${y(bs)+1}px;height:${y(be)-y(bs)-2}px"><span>Buffer ${it.buffer} min</span></div>`});
   items.forEach(it=>{const s=Math.max(toMin(it.start),sH*60),e=Math.min(Math.max(toMin(it.end),s+15),eH*60);if(e<=s)return;
-    const w=100/it._lanes,ht=(e-s)*ppm-2,short=ht<60,isR=it.src==="routines";
+    const w=100/it._lanes,ht=y(e)-y(s)-2,short=ht<60,isR=it.src==="routines";
     grid+=`<button class="blk k-${it.kind||"work"} ${isR?"rt":""} ${short?"short":""} ${timing(it,ds)} ${S.flash===it.id?"grow":""}" data-dock="${it.src}:${it.id}:${ds}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><b>${ic(itemIcon(it,isR?"repeat":(it.kind||"work")),"bi")}${esc(it.title)}</b><span class="tm">${it.start}${short?"":"–"+it.end}</span></button>`});
   if(isToday&&nm>=sH*60&&nm<=eH*60)grid+=`<div class="now" style="top:${y(nm)}px"></div>`;
   const fw=freeWork(ds),need=S.tasks.filter(t=>(t.date===ds||(isToday&&t.date&&t.date<ds))&&!t.done&&t.mins&&!S.blocks.some(b=>b.taskId===t.id&&b.date===ds)).reduce((a,t)=>a+Math.round(t.mins*ratio()),0);
