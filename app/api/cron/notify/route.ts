@@ -11,13 +11,23 @@ export async function GET(req: Request) {
   // With CRON_SECRET set, only Vercel Cron (which sends it) gets in. Without it, accept Vercel Cron's user agent;
   // the route only sends alerts that are due anyway and never returns planner data.
   // An outside scheduler (cron-job.org) may pass the secret as ?key= since some can't set headers.
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get("authorization") || "";
-  const key = new URL(req.url).searchParams.get("key") || "";
+  // Tolerant matching: trims stray spaces from the saved value and the link, and treats a "+"
+  // that a browser turned into a space as the same thing, so a typed secret still matches.
+  const secret = (process.env.CRON_SECRET || "").trim();
+  const auth = (req.headers.get("authorization") || "").trim();
+  const rawKey = /[?&]key=([^&]*)/.exec(req.url)?.[1] || "";
+  let decoded = rawKey;
+  try {
+    decoded = decodeURIComponent(rawKey);
+  } catch {}
+  const keys = [decoded, decoded.replace(/ /g, "+"), rawKey].map((k) => k.trim());
   const allowed = secret
-    ? safeEqual(auth, `Bearer ${secret}`) || safeEqual(key, secret)
+    ? safeEqual(auth, `Bearer ${secret}`) || keys.some((k) => k && safeEqual(k, secret))
     : (req.headers.get("user-agent") || "").startsWith("vercel-cron/");
-  if (!allowed) return NextResponse.json({ error: "Not allowed." }, { status: 401 });
+  if (!allowed) {
+    const reason = !rawKey && !auth ? "The link has no ?key= on the end." : "The key in the link doesn't match CRON_SECRET in Vercel.";
+    return NextResponse.json({ error: "Not allowed.", reason }, { status: 401 });
+  }
 
   const data = await loadData();
   if (!data.subs.length) return NextResponse.json({ ok: true, skipped: "no devices" });
