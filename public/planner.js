@@ -65,6 +65,15 @@ function renderHeader(){
   $("#fab").textContent={home:"+ Block",day:"+ Block",week:"+ Block",month:"+ Block",tasks:"+ Task",routines:"+ Routine"}[S.view];
 }
 
+/* ---------- shared day list: one-offs in full, routines as one compact strip ---------- */
+function dayList(ds,its,tasks){
+  const one=its.filter(i=>i.src!=="routines"),rt=its.filter(i=>i.src==="routines");
+  let h=one.map(it=>`<button class="wi k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}"><span class="tm">${it.start}–${it.end}</span><span class="dot"></span><span class="tt">${esc(it.title)}</span></button>`).join("");
+  h+=(tasks||[]).map(t=>`<button class="wi" data-open="tasks:${t.id}"><span class="tm">${t.priority==="top"?"★ Top":"Task"}</span><span class="dot" style="background:var(--muted)"></span><span class="tt ${t.done?"strike":""}">${esc(t.title)}</span></button>`).join("");
+  if(rt.length)h+=`<div class="rstrip">${rt.map(it=>`<button class="rchip k-${it.kind||"work"}" data-open="routines:${it.id}:${ds}"><span>${it.start}</span>${esc(it.title)}</button>`).join("")}</div>`;
+  return h||`<div class="wi"><span class="tt" style="color:var(--muted)">Nothing planned</span></div>`;
+}
+
 /* ---------- home ---------- */
 const WX={0:"Clear",1:"Mostly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Fog",51:"Light drizzle",53:"Drizzle",55:"Heavy drizzle",61:"Light rain",63:"Rain",65:"Heavy rain",66:"Freezing rain",67:"Freezing rain",71:"Light snow",73:"Snow",75:"Heavy snow",80:"Showers",81:"Showers",82:"Heavy showers",95:"Thunderstorms",96:"Thunderstorms",99:"Thunderstorms"};
 S.wx=null;
@@ -98,6 +107,8 @@ function renderHome(){
   h+=nowNext(ds);
   h+=`<div class="hgrid"><section class="hcard" data-v-go="day"><span class="lb">Today</span><b>${left}</b><small>${left===1?"item":"items"} still to come</small></section><section class="hcard" data-v-go="day"><span class="lb">Free in work day</span><b>${wd(n)<=5?inFmt(fw)||"0 min":"Day off"}</b><small>${wd(n)<=5?"after blocks and buffers":"Weekend"}</small></section></div>`;
   h+=`<div class="t3h"><h2>Top 3</h2>${top.length?`<span class="cnt ${nDone===top.length?"all":""}">${nDone===top.length?"✓ ":""}${nDone} of ${top.length} done</span>`:""}</div><div class="top3">${top.map((t,i)=>`<div class="t3 ${t.done?"done":""}"><span class="n">${i+1}</span><button class="tt t3b" data-open="tasks:${t.id}">${esc(t.title)}</button><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button></div>`).join("")}${top.length<3?`<button class="addline" data-addtop="${ds}">+ Top task</button>`:""}</div>`;
+  const tm=addDays(n,1),tds=ymd(tm),tIts=itemsFor(tds),tTasks=S.tasks.filter(t=>t.date===tds&&!t.done);
+  h+=`<div class="t3h"><h2>Tomorrow</h2><button class="ghost sm" data-goday="${tds}">${fmt(tm,{weekday:"short",day:1,month:"short"})}</button></div>`+(tIts.length||tTasks.length?`<div class="week"><section class="wd">${dayList(tds,tIts,tTasks)}</section></div>`:`<div class="empty">Nothing planned</div>`);
   const al=upcomingAlerts(ds);
   h+=`<h2>Reminders</h2>`+(al.length?`<div class="week"><section class="wd">${al.map(a=>`<button class="wi k-${a.it.kind||"work"}" data-open="${a.it.src}:${a.it.id}:${ds}"><span class="tm">${hm(a.at)}</span><span class="dot"></span><span class="tt">${esc(a.it.title)} <span class="mut">· ${a.r===0?"at start":inFmt(a.r)+" before"}</span></span></button>`).join("")}</section></div>`:`<div class="empty">No more reminders today</div>`)+(S.alertsHere?"":`<p class="mut small">Phone alerts are off on this device.</p>`);
   $("#view").innerHTML=h;
@@ -150,7 +161,7 @@ function renderDay(){
   {const ws=toMin(S.work.start),we=toMin(S.work.end);if(ws>sH*60)grid+=`<div class="off" style="top:0;height:${y(ws)}px"></div>`;if(we<eH*60)grid+=`<div class="off" style="top:${y(we)}px;height:${y(eH*60)-y(we)}px"></div>`;if(wd(S.cur)<=5)grid+=`<span class="wl" style="top:${y(ws)}px">Work day starts</span><span class="wl" style="top:${y(we)}px">Work day ends</span>`}
   items.forEach(it=>{if(!it.buffer)return;const bs=toMin(it.end),be=Math.min(bs+it.buffer,eH*60);if(be>bs)grid+=`<div class="buf" style="top:${y(bs)+1}px;height:${(be-bs)*ppm-2}px"><span>Buffer ${it.buffer} min</span></div>`});
   items.forEach(it=>{const s=Math.max(toMin(it.start),sH*60),e=Math.min(Math.max(toMin(it.end),s+15),eH*60);if(e<=s)return;const w=100/it._lanes,ht=(e-s)*ppm-2,short=ht<60;
-    grid+=`<button class="blk k-${it.kind||"work"} ${it.src==="routines"?"rt":""} ${short?"short":""}" data-open="${it.src}:${it.id}:${ds}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><b>${esc(it.title)}</b><span class="tm">${it.src==="routines"?"↻ ":""}${it.start}${short?"":"–"+it.end}</span></button>`});
+    const isR=it.src==="routines";grid+=`<button class="blk k-${it.kind||"work"} ${isR?"rt slim":""} ${short||isR?"short":""}" data-open="${it.src}:${it.id}:${ds}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><b>${esc(it.title)}</b><span class="tm">${it.src==="routines"?"↻ ":""}${it.start}${short?"":"–"+it.end}</span></button>`});
   if(isToday&&nm>=sH*60&&nm<=eH*60)grid+=`<div class="now" style="top:${y(nm)}px"></div>`;
   const fw=freeWork(ds),need=dayTasks.filter(t=>!t.done&&t.mins&&!S.blocks.some(b=>b.taskId===t.id&&b.date===ds)).reduce((a,t)=>a+Math.round(t.mins*ratio()),0);
   if(wd(S.cur)<=5&&need>fw)h+=`<div class="over"><b>Too much for one day</b><span>Tasks need about ${inFmt(need)}, you have ${fw?inFmt(fw):"no time"} free.</span></div>`;h+=`<h2>Plan</h2><p class="label" style="margin:0 0 6px">${wd(S.cur)<=5?(fw?inFmt(fw)+" free in your work day":"Work day fully booked"):""}</p>`;
@@ -164,7 +175,7 @@ function renderWeek(){
   const m=addDays(S.cur,1-wd(S.cur));let h=`<div class="week" style="margin-top:14px">`;
   for(let i=0;i<7;i++){const d=addDays(m,i),ds=ymd(d),its=itemsFor(ds),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length;
     h+=`<section class="wd ${ds===todayStr()?"today":""}"><header data-goday="${ds}"><span class="d">${fmt(d,{weekday:"short",day:1,month:"short"})}</span><span class="c">${tc?tc+" task"+(tc>1?"s":"")+" · ":""}${its.length} item${its.length===1?"":"s"}</span></header>`;
-    h+=its.length?its.map(it=>`<button class="wi k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}"><span class="tm">${it.start}–${it.end}</span><span class="dot"></span><span class="tt">${esc(it.title)}</span></button>`).join(""):`<div class="wi"><span class="tt" style="color:var(--muted)">Nothing planned</span></div>`;
+    h+=dayList(ds,its);
     h+=`</section>`}
   $("#view").innerHTML=h+"</div>";
 }
@@ -181,7 +192,7 @@ function renderMonth(){
   h+=`</div></div>`;
   const sd=fromYmd(S.sel),its=itemsFor(S.sel),tasks=S.tasks.filter(t=>t.date===S.sel);
   h+=`<div class="mlist"><header class="mlh"><h2>${fmt(sd,{weekday:"long",day:1,month:"long"})}</h2><button class="ghost" data-goday="${S.sel}">Open day</button></header>`;
-  h+=its.length||tasks.length?`<div class="week"><section class="wd">${its.map(it=>`<button class="wi k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${S.sel}"><span class="tm">${it.start}–${it.end}</span><span class="dot"></span><span class="tt">${esc(it.title)}</span></button>`).join("")}${tasks.map(t=>`<button class="wi" data-open="tasks:${t.id}"><span class="tm">${t.priority==="top"?"★ Top":"Task"}</span><span class="dot" style="background:var(--muted)"></span><span class="tt ${t.done?"strike":""}">${esc(t.title)}</span></button>`).join("")}</section></div>`:`<div class="empty">Nothing planned</div>`;
+  h+=its.length||tasks.length?`<div class="week"><section class="wd">${dayList(S.sel,its,tasks)}</section></div>`:`<div class="empty">Nothing planned</div>`;
   $("#view").innerHTML=h+`</div>`;
 }
 

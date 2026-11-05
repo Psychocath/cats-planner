@@ -284,3 +284,12 @@ input[type="date"]::-webkit-date-and-time-value,input[type="time"]::-webkit-date
 .mut{color:var(--muted)}
 .small{font-size:.8rem;margin:8px 0 0}
 @media (max-width:340px){.hero{grid-template-columns:1fr}.qa{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* routines: compact */
+.rstrip{display:flex;flex-wrap:wrap;gap:6px;padding-top:6px;margin-top:2px;border-top:1px dashed var(--line)}
+.rchip{display:inline-flex;align-items:baseline;gap:6px;max-width:100%;border:1px solid color-mix(in srgb,var(--kc) 45%,transparent);background:transparent;color:var(--muted);border-radius:999px;padding:3px 10px;font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rchip span{font-family:var(--f-mono);font-size:.72rem;color:var(--kc)}
+.blk.slim{background:transparent;background-image:none;border:1px dashed color-mix(in srgb,var(--kc) 55%,transparent);border-left:3px solid var(--kc);padding-block:0;opacity:.85}
+.blk.slim b{font-size:.8rem;font-weight:500;color:var(--muted)}
+.blk.slim .tm{font-size:.68rem}
+.ghost.sm{padding:5px 10px;font-size:.8rem}
