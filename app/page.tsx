@@ -2,7 +2,38 @@ import Script from "next/script";
 
 // The planner UI is plain DOM code in /public/planner.js; this page gives it its shell.
 const VERSION = (process.env.VERCEL_GIT_COMMIT_SHA || "dev").slice(0, 12);
-const SHELL = "\n\n<div class=\"wrap\">\n  <header>\n    <div class=\"daterow\">\n      <button class=\"icon\" id=\"prev\" aria-label=\"Previous\">\u2039</button>\n      <h1 id=\"dtitle\"><small id=\"dsub\"></small><span id=\"dmain\"></span></h1>\n      <button class=\"ghost\" id=\"todayBtn\">Today</button>\n      <button class=\"icon\" id=\"next\" aria-label=\"Next\">\u203a</button>\n      <button class=\"icon\" id=\"gear\" aria-label=\"Settings\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z\"/></svg></button>\n    </div>\n  </header>\n  <div id=\"status\" class=\"banner\" hidden></div>\n  <main id=\"view\"></main>\n</div>\n<button class=\"fab\" id=\"fab\">+ Add</button>\n<nav class=\"tabs\" aria-label=\"Views\"><div class=\"in\">\n  <button data-v=\"home\"><svg viewBox=\"0 0 24 24\"><path d=\"M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z\"/></svg>Home</button>\n  <button data-v=\"day\"><svg viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"8\"/><path d=\"M12 8v4l3 2\"/></svg>Today</button>\n  <button data-v=\"week\"><svg viewBox=\"0 0 24 24\"><rect x=\"4\" y=\"5\" width=\"16\" height=\"15\" rx=\"2\"/><path d=\"M4 10h16M9 3v4M15 3v4\"/></svg>Week</button>\n  <button data-v=\"month\"><svg viewBox=\"0 0 24 24\"><rect x=\"4\" y=\"5\" width=\"16\" height=\"15\" rx=\"2\"/><path d=\"M4 10h16M9 3v4M15 3v4M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01\"/></svg>Month</button>\n  <button data-v=\"tasks\"><svg viewBox=\"0 0 24 24\"><path d=\"M9 6h11M9 12h11M9 18h11\"/><path d=\"M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2\"/></svg>Tasks</button>\n  \n</div></nav>\n<div id=\"sheetRoot\"></div>\n<div id=\"toast\" class=\"toast\" hidden></div>\n\n";
+
+const icon = (paths: string) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
+const GEAR = icon(
+  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'
+);
+const TAB = (v: string, label: string, paths: string) => `<button data-v="${v}">${icon(paths)}${label}</button>`;
+
+const SHELL = `
+<div class="wrap">
+  <header class="top">
+    <div class="daterow">
+      <button class="icon" id="prev" aria-label="Previous">${icon('<path d="M15 6l-6 6 6 6"/>')}</button>
+      <h1 id="dtitle"><small id="dsub"></small><span id="dmain"></span></h1>
+      <button class="ghost" id="todayBtn">Today</button>
+      <button class="icon" id="next" aria-label="Next">${icon('<path d="M9 6l6 6-6 6"/>')}</button>
+      <button class="icon" id="gear" aria-label="Settings">${GEAR}</button>
+    </div>
+  </header>
+  <div id="status" class="banner" hidden></div>
+  <main id="view"></main>
+</div>
+<button class="fab" id="fab" aria-label="Add">${icon('<path d="M12 5v14M5 12h14"/>')}</button>
+<nav class="tabs" aria-label="Views"><div class="in">
+  ${TAB("home", "Home", '<path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z"/>')}
+  ${TAB("day", "Today", '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>')}
+  ${TAB("week", "Week", '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>')}
+  ${TAB("month", "Month", '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01"/>')}
+  ${TAB("tasks", "Tasks", '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>')}
+</div></nav>
+<div id="sheetRoot"></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+`;
 
 export default function Home() {
   return (
