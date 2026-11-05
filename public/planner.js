@@ -89,6 +89,7 @@ const IC={
  rain:'<path d="M7 15h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 8a3.5 3.5 0 0 0 1 7z"/><path d="M9 18l-1 3M13 18l-1 3M17 18l-1 3"/>',
  storm:'<path d="M7 15h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 8a3.5 3.5 0 0 0 1 7z"/><path d="M12 15l-2 4h3l-2 4"/>',
  fog:'<path d="M4 9h16M3 13h18M5 17h14"/>',
+ flag:'<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
  list:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>',
  steps:'<path d="M4 6h3M4 12h3M4 18h3M10 6h10M10 12h10M10 18h10"/>',
 };
@@ -96,10 +97,14 @@ const ic=(n,c="")=>`<svg class="ic ${c}" viewBox="0 0 24 24" aria-hidden="true">
 const wxIcon=c=>c===0||c===1?"sun":c===2||c===3?"cloud":c===45||c===48?"fog":c>=95?"storm":c>=51?"rain":"cloud";
 
 /* ---------- shared day list: one-offs in full, routines as one compact strip ---------- */
-function dayList(ds,its,tasks){
+const tasksDue=ds=>S.tasks.filter(t=>t.date===ds);
+const deadlinesFor=ds=>S.tasks.filter(t=>t.for===ds&&t.date!==ds);
+const shortD=ds=>fmt(fromYmd(ds),{weekday:"short",day:1,month:"short"});
+function dayList(ds,its,tasks,dl){
   const one=its.filter(i=>i.src!=="routines"),rt=its.filter(i=>i.src==="routines");
   let h=one.map(it=>`<button class="wi k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}"><span class="tm">${it.start}–${it.end}</span>${ic(it.kind||"work","ki")}<span class="tt">${esc(it.title)}</span></button>`).join("");
   h+=(tasks||[]).map(t=>`<button class="wi" data-open="tasks:${t.id}"><span class="tm">${t.priority==="top"?"Top 3":"Task"}</span>${ic(t.priority==="top"?"star":"task","ki mt")}<span class="tt ${t.done?"strike":""}">${esc(t.title)}</span></button>`).join("");
+  h+=(dl||[]).map(t=>`<button class="wi dl" data-open="tasks:${t.id}"><span class="tm">Deadline</span>${ic("flag","ki dlc")}<span class="tt ${t.done?"strike":""}">${esc(t.title)}<span class="mut"> · ${t.done?"done":"do by "+(t.date?shortD(t.date):"any day")}</span></span></button>`).join("");
   if(rt.length)h+=`<div class="rstrip">${rt.map(it=>`<button class="rchip k-${it.kind||"work"}" data-open="routines:${it.id}:${ds}">${ic("repeat")}<span>${it.start}</span>${esc(it.title)}</button>`).join("")}</div>`;
   return h||`<div class="wi"><span class="tt" style="color:var(--muted)">Nothing planned</span></div>`;
 }
@@ -138,8 +143,8 @@ function renderHome(){
   h+=nowNext(ds);
   h+=`<div class="hgrid"><section class="hcard" data-v-go="day"><span class="lb">${ic("cal")}Today</span><b>${left}</b><small>${left===1?"item":"items"} still to come</small></section><section class="hcard" data-v-go="day"><span class="lb">${ic("clock")}Free in work day</span><b>${wd(n)<=5?inFmt(fw)||"0 min":"Day off"}</b><small>${wd(n)<=5?"after blocks and buffers":"Weekend"}</small></section></div>`;
   h+=`<div class="t3h"><h2>${ic("star","h")}Top 3</h2>${top.length?`<span class="cnt ${nDone===top.length?"all":""}">${nDone===top.length?"✓ ":""}${nDone} of ${top.length} done</span>`:""}</div><div class="top3">${top.map((t,i)=>`<div class="t3 ${t.done?"done":""}"><span class="n">${i+1}</span><button class="tt t3b" data-open="tasks:${t.id}">${esc(t.title)}</button><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button></div>`).join("")}${top.length<3?`<button class="addline" data-addtop="${ds}">+ Top task</button>`:""}</div>`;
-  const tm=addDays(n,1),tds=ymd(tm),tIts=itemsFor(tds),tTasks=S.tasks.filter(t=>t.date===tds&&!t.done);
-  h+=`<div class="t3h"><h2>${ic("cal","h")}Tomorrow</h2><button class="ghost sm" data-goday="${tds}">${fmt(tm,{weekday:"short",day:1,month:"short"})}</button></div>`+(tIts.length||tTasks.length?`<div class="week"><section class="wd">${dayList(tds,tIts,tTasks)}</section></div>`:`<div class="empty">Nothing planned</div>`);
+  const tm=addDays(n,1),tds=ymd(tm),tIts=itemsFor(tds),tTasks=S.tasks.filter(t=>t.date===tds&&!t.done),tDl=deadlinesFor(tds).filter(t=>!t.done);
+  h+=`<div class="t3h"><h2>${ic("cal","h")}Tomorrow</h2><button class="ghost sm" data-goday="${tds}">${fmt(tm,{weekday:"short",day:1,month:"short"})}</button></div>`+(tIts.length||tTasks.length||tDl.length?`<div class="week"><section class="wd">${dayList(tds,tIts,tTasks,tDl)}</section></div>`:`<div class="empty">Nothing planned</div>`);
   const al=upcomingAlerts(ds);
   h+=`<h2>${ic("bell","h")}Reminders</h2>`+(al.length?`<div class="week"><section class="wd">${al.map(a=>`<button class="wi k-${a.it.kind||"work"}" data-open="${a.it.src}:${a.it.id}:${a.day}"><span class="tm">${hm(a.at)}</span><span class="dot"></span><span class="tt">${esc(a.it.title)} <span class="mut">· ${a.d?`due ${a.d===1?"tomorrow":fmt(fromYmd(a.day),{weekday:"short",day:1,month:"short"})} at ${a.it.start}`:(a.r===0?"at start":inFmt(a.r)+" before")}</span></span></button>`).join("")}</section></div>`:`<div class="empty">No more reminders today</div>`)+(S.alertsHere?"":`<p class="mut small">Phone alerts are off on this device.</p>`);
   $("#view").innerHTML=h;
@@ -180,6 +185,9 @@ function renderDay(){
   h+=top.map((t,i)=>`<div class="t3 ${t.done?"done":""}"><span class="n">${i+1}</span><button class="tt t3b" data-open="tasks:${t.id}">${esc(t.title)}${(t.steps||[]).length?`<small>${t.steps.filter(x=>x.done).length}/${t.steps.length} steps</small>`:""}</button><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button></div>`).join("");
   if(top.length<3)h+=`<button class="addline" data-addtop="${ds}">+ Top task</button>`;
   h+=`</div>`;
+  // Same task set Week and Month show for this day: other tasks due, plus deadlines landing today.
+  const other=dayTasks.filter(t=>t.priority!=="top"),dls=deadlinesFor(ds);
+  if(other.length||dls.length)h+=`<h2>${ic("task","h")}Also today</h2><div class="week"><section class="wd">${dayList(ds,[],other,dls)}</section></div>`;
   const raw=itemsFor(ds),items=layoutLanes(raw);
   const n=new Date(),nm=n.getHours()*60+n.getMinutes();
   let sH=Math.min(7,Math.floor(toMin(S.work.start)/60)),eH=Math.max(18,Math.ceil(toMin(S.work.end)/60));
@@ -204,9 +212,12 @@ function renderDay(){
 /* ---------- week ---------- */
 function renderWeek(){
   const m=addDays(S.cur,1-wd(S.cur));let h=`<div class="week" style="margin-top:14px">`;
-  for(let i=0;i<7;i++){const d=addDays(m,i),ds=ymd(d),its=itemsFor(ds),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length;
+  for(let i=0;i<7;i++){const d=addDays(m,i),ds=ymd(d),its=itemsFor(ds),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length+deadlinesFor(ds).length;
     h+=`<section class="wd ${ds===todayStr()?"today":""}"><header data-goday="${ds}"><span class="d">${fmt(d,{weekday:"short",day:1,month:"short"})}</span><span class="c">${tc?tc+" task"+(tc>1?"s":"")+" · ":""}${its.length} item${its.length===1?"":"s"}</span></header>`;
-    h+=dayList(ds,its);
+    // Week keeps tasks short: open ones first, up to 2, then a "more" link to the day.
+    {const all=[...tasksDue(ds).filter(t=>!t.done).sort((a,b)=>(a.priority==="top"?0:1)-(b.priority==="top"?0:1)).map(t=>({t,k:"task"})),...deadlinesFor(ds).filter(t=>!t.done).map(t=>({t,k:"dl"}))],shown=all.slice(0,2),more=all.length-shown.length;
+     h+=dayList(ds,its,shown.filter(x=>x.k==="task").map(x=>x.t),shown.filter(x=>x.k==="dl").map(x=>x.t));
+     if(more)h+=`<button class="wmore" data-goday="${ds}">+ ${more} more task${more>1?"s":""}</button>`}
     h+=`</section>`}
   $("#view").innerHTML=h+"</div>";
 }
@@ -217,13 +228,13 @@ function renderMonth(){
   if(!S.sel||fromYmd(S.sel).getMonth()!==first.getMonth())S.sel=ymd(S.cur);
   let h=`<div class="mgrid" role="grid"><div class="mhead">${DAYN.map(d=>`<span>${d.slice(0,2)}</span>`).join("")}</div><div class="mdays">`;
   for(let i=0;i<42;i++){const d=addDays(start,i),ds=ymd(d);if(i>=35&&d.getMonth()!==first.getMonth())break;
-    const its=itemsFor(ds).filter(x=>x.src!=="routines"),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length,out=d.getMonth()!==first.getMonth();
+    const its=itemsFor(ds).filter(x=>x.src!=="routines"),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length,dlc=S.tasks.filter(t=>t.for===ds&&!t.done).length,out=d.getMonth()!==first.getMonth();
     const hol=its.find(x=>/^Public holiday/i.test(x.title));
-    h+=`<button class="mday ${out?"out":""} ${ds===td?"today":""} ${ds===S.sel?"sel":""} ${hol?"hol":""}" data-sel="${ds}" aria-label="${fmt(d,{weekday:"long",day:1,month:"long"})}, ${its.length} items"><span class="num">${d.getDate()}</span><span class="dots">${its.slice(0,4).map(x=>`<i class="k-${x.kind||"work"}"></i>`).join("")}${its.length>4?"<em>+</em>":""}</span>${tc?`<span class="tc">${tc}</span>`:""}</button>`}
+    h+=`<button class="mday ${out?"out":""} ${ds===td?"today":""} ${ds===S.sel?"sel":""} ${hol?"hol":""}" data-sel="${ds}" aria-label="${fmt(d,{weekday:"long",day:1,month:"long"})}, ${its.length} items"><span class="num">${d.getDate()}</span><span class="dots">${its.slice(0,4).map(x=>`<i class="k-${x.kind||"work"}"></i>`).join("")}${its.length>4?"<em>+</em>":""}${tc?`<b class="sq" title="${tc} task${tc>1?"s":""}"></b>`:""}</span>${dlc?`<span class="dlm">${ic("flag")}</span>`:""}</button>`}
   h+=`</div></div>`;
-  const sd=fromYmd(S.sel),its=itemsFor(S.sel),tasks=S.tasks.filter(t=>t.date===S.sel);
+  const sd=fromYmd(S.sel),its=itemsFor(S.sel),tasks=S.tasks.filter(t=>t.date===S.sel),dls=deadlinesFor(S.sel);
   h+=`<div class="mlist"><header class="mlh"><h2>${fmt(sd,{weekday:"long",day:1,month:"long"})}</h2><button class="ghost" data-goday="${S.sel}">Open day</button></header>`;
-  h+=its.length||tasks.length?`<div class="week"><section class="wd">${dayList(S.sel,its,tasks)}</section></div>`:`<div class="empty">Nothing planned</div>`;
+  h+=its.length||tasks.length||dls.length?`<div class="week"><section class="wd">${dayList(S.sel,its,tasks,dls)}</section></div>`:`<div class="empty">Nothing planned</div>`;
   $("#view").innerHTML=h+`</div>`;
 }
 
@@ -231,7 +242,7 @@ function renderMonth(){
 function openDetails(col,rec,date){
   const isR=col==="routines",isT=col==="tasks",d=date?fromYmd(date):null;
   const rows=[];
-  if(isT){rows.push(["Due",rec.date?fmt(fromYmd(rec.date),{weekday:"long",day:1,month:"long"}):"No date"]);if(rec.priority==="top")rows.push(["Priority","Top 3"]);
+  if(isT){if(rec.for)rows.push(["For",fmt(fromYmd(rec.for),{weekday:"long",day:1,month:"long"})]);rows.push(["Due",rec.date?fmt(fromYmd(rec.date),{weekday:"long",day:1,month:"long"}):"No date"]);if(rec.priority==="top")rows.push(["Priority","Top 3"]);
     if(rec.mins||rec.actual)rows.push(["Time",(rec.mins?`Estimate ${rec.mins} min`:"")+(rec.actual?`${rec.mins?" · ":""}took ${rec.actual} min`:"")+(rec.mins&&ratio()!==1&&!rec.actual?` · likely ${Math.round(rec.mins*ratio())} min`:"")])}
   else{if(d)rows.push(["When",fmt(d,{weekday:"long",day:1,month:"long"})]);
     rows.push(["Time",`${rec.start}–${rec.end} · ${durFmt(rec.start,rec.end)}`]);
@@ -241,7 +252,7 @@ function openDetails(col,rec,date){
   if(rec.notes)rows.push(["Notes",esc(rec.notes).replace(/\n/g,"<br>")]);
   const steps=rec.steps||[],skipped=isR&&date&&(rec.skips||[]).includes(date);
   const stepsHtml=steps.length?`<div class="steps"><div class="sh"><span class="lb">Steps</span><span class="cnt">${steps.filter(x=>x.done).length} of ${steps.length}</span></div>${steps.map((x,i)=>`<label class="step ${x.done?"done":""}"><input type="checkbox" data-step="${i}" ${x.done?"checked":""}><span>${esc(x.text)}</span></label>`).join("")}</div>`:"";
-  $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(rec.title)}"><div class="in"><div class="dhead k-${rec.kind||(isT?"admin":"work")}"><span class="chip">${ic(isT?"task":(rec.kind||"work"))}${isT?"Task":(KINDS[rec.kind]||"Work")+(isR?" · repeats":"")}</span><h3 class="${isT&&rec.done?"strike":""}">${esc(rec.title)}</h3></div><dl class="dl">${rows.map(([k,v])=>`<dt>${ic({Due:"cal",When:"cal",Time:"clock",Repeats:"repeat",Reminder:"bell",Buffer:"buffer",Notes:"note",Priority:"star"}[k]||"note")}${k}</dt><dd>${v}</dd>`).join("")}</dl>${stepsHtml}<div class="acts">${!(isT&&rec.done)?`<button class="primary" id="dFocus" type="button">${ic("focus")}Focus</button>`:""}<button class="ghost" id="dEdit" type="button">Edit</button>${isT?`<button class="ghost" id="dDone" type="button">${rec.done?"Not done":"Done"}</button>`:""}${isR&&date?`<button class="ghost" id="dSkip" type="button">${skipped?"Bring back this day":"Skip this day"}</button>`:""}<button class="ghost" id="dClose" type="button">Close</button></div></div></div>`;
+  $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(rec.title)}"><div class="in"><div class="dhead k-${rec.kind||(isT?"admin":"work")}"><span class="chip">${ic(isT?"task":(rec.kind||"work"))}${isT?"Task":(KINDS[rec.kind]||"Work")+(isR?" · repeats":"")}</span><h3 class="${isT&&rec.done?"strike":""}">${esc(rec.title)}</h3></div><dl class="dl">${rows.map(([k,v])=>`<dt>${ic({For:"flag",Due:"cal",When:"cal",Time:"clock",Repeats:"repeat",Reminder:"bell",Buffer:"buffer",Notes:"note",Priority:"star"}[k]||"note")}${k}</dt><dd>${v}</dd>`).join("")}</dl>${stepsHtml}<div class="acts">${!(isT&&rec.done)?`<button class="primary" id="dFocus" type="button">${ic("focus")}Focus</button>`:""}<button class="ghost" id="dEdit" type="button">Edit</button>${isT?`<button class="ghost" id="dDone" type="button">${rec.done?"Not done":"Done"}</button>`:""}${isR&&date?`<button class="ghost" id="dSkip" type="button">${skipped?"Bring back this day":"Skip this day"}</button>`:""}<button class="ghost" id="dClose" type="button">Close</button></div></div></div>`;
   $("#scrim").onclick=closeSheet;$("#dClose").onclick=closeSheet;
   $("#dEdit").onclick=()=>openSheet(col,rec,{});
   const fo=$("#dFocus");if(fo)fo.onclick=()=>startFocus(col,rec,date);
@@ -288,8 +299,8 @@ function toggleTask(t){const done=!t.done;save("tasks",t.id,{...strip(t),done});
 
 /* ---------- tasks ---------- */
 function taskRow(t){const td=todayStr(),due=t.date?(t.date===td?"Today":t.date<td&&!t.done?"Carried over from "+fmt(fromYmd(t.date),{weekday:"short"}):fmt(fromYmd(t.date),{weekday:"short",day:1,month:"short"})):"No date";
-  const st=t.steps||[],sd=st.filter(x=>x.done).length,est=t.mins?(t.actual?` · est ${t.mins} min, took ${t.actual}`:` · ${t.mins} min`):(t.actual?` · took ${t.actual} min`:"");
-  return `<div class="row ${t.done?"done":""}"><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button><button class="tt" data-open="tasks:${t.id}"><div>${t.priority==="top"?ic("star","star"):""}${esc(t.title)}${t.example?'<span class="ex">Example</span>':""}</div><div class="meta">${due}${est}${st.length?` · ${sd}/${st.length} steps`:""}</div></button>${t.done?"":`<button class="plan" data-plan="${t.id}">Block it</button>`}</div>`}
+  const forTxt=t.for?` · for ${shortD(t.for)}`:"",st=t.steps||[],sd=st.filter(x=>x.done).length,est=t.mins?(t.actual?` · est ${t.mins} min, took ${t.actual}`:` · ${t.mins} min`):(t.actual?` · took ${t.actual} min`:"");
+  return `<div class="row ${t.done?"done":""}"><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button><button class="tt" data-open="tasks:${t.id}"><div>${t.priority==="top"?ic("star","star"):""}${esc(t.title)}${t.example?'<span class="ex">Example</span>':""}</div><div class="meta">${due}${forTxt}${est}${st.length?` · ${sd}/${st.length} steps`:""}</div></button>${t.done?"":`<button class="plan" data-plan="${t.id}">Block it</button>`}</div>`}
 function renderTasks(){
   const td=todayStr(),open=S.tasks.filter(t=>!t.done),done=S.tasks.filter(t=>t.done);
   const byP=(a,b)=>(a.priority==="top"?0:1)-(b.priority==="top"?0:1)||(a.date||"9").localeCompare(b.date||"9");
@@ -323,7 +334,7 @@ function openSheet(type,rec,preset){
     const st=rec.start||preset.start||"09:00",en=rec.end||preset.end||pad(Math.min(23,Math.floor(toMin(st)/60)+1))+":"+st.slice(3);
     f+=`<div class="f"><label for="fDate">Day</label><input id="fDate" type="date" value="${rec.date||preset.date||ymd(S.cur)}"></div><div class="two"><div class="f"><label for="fStart">Start</label><input id="fStart" type="time" step="900" value="${st}"></div><div class="f"><label for="fEnd">End</label><input id="fEnd" type="time" step="900" value="${en}"></div></div>`+kindOpts;
   }else if(type==="tasks"){
-    f+=`<div class="two"><div class="f"><label for="fDate">Due (optional)</label><input id="fDate" type="date" value="${rec.date||preset.date||""}"></div><div class="f"><label for="fMins">Minutes (optional)</label><input id="fMins" type="number" min="5" step="5" inputmode="numeric" value="${rec.mins||""}"></div></div><div class="f"><span class="lb">Priority</span><div class="opts" id="fPri"><button type="button" data-p="top" aria-pressed="${(rec.priority||preset.priority)==="top"}">★ Top 3</button><button type="button" data-p="normal" aria-pressed="${(rec.priority||preset.priority)!=="top"}">Normal</button></div></div>`;
+    f+=`<div class="two"><div class="f"><label for="fDate">Do by (optional)</label><input id="fDate" type="date" value="${rec.date||preset.date||""}"></div><div class="f"><label for="fFor">For event on (optional)</label><input id="fFor" type="date" value="${rec.for||""}"></div><div class="f"><label for="fMins">Minutes (optional)</label><input id="fMins" type="number" min="5" step="5" inputmode="numeric" value="${rec.mins||""}"></div></div><div class="f"><span class="lb">Priority</span><div class="opts" id="fPri"><button type="button" data-p="top" aria-pressed="${(rec.priority||preset.priority)==="top"}">★ Top 3</button><button type="button" data-p="normal" aria-pressed="${(rec.priority||preset.priority)!=="top"}">Normal</button></div></div>`;
   }else{
     const days=rec.days||[1,2,3,4,5];
     f+=`<div class="two"><div class="f"><label for="fStart">Start</label><input id="fStart" type="time" step="900" value="${rec.start||"08:00"}"></div><div class="f"><label for="fEnd">End</label><input id="fEnd" type="time" step="900" value="${rec.end||"08:30"}"></div></div><div class="f"><span class="lb">Repeats on</span><div class="opts" id="fDays">${DAYN.map((n,i)=>`<button type="button" data-d="${i+1}" aria-pressed="${days.includes(i+1)}">${n}</button>`).join("")}</div></div><div class="f"><label for="fUntil">Repeats until (optional)</label><input id="fUntil" type="date" value="${rec.until||""}"></div>`+kindOpts;
@@ -346,7 +357,7 @@ function openSheet(type,rec,preset){
     if(type==="blocks"){const s=$("#fStart").value,en=$("#fEnd").value,d=$("#fDate").value;if(!d||!s||!en){err.textContent="Pick a day, a start and an end time.";return}if(toMin(en)<=toMin(s)){err.textContent="End time needs to be after the start time.";return}data={...strip(rec),title:t,date:d,start:s,end:en,kind:k};if(preset.taskId)data.taskId=preset.taskId}
     else if(type==="tasks"){const p=(form.querySelector('#fPri [aria-pressed="true"]')||{}).dataset?.p||"normal",d=$("#fDate").value||null,mins=parseInt($("#fMins").value)||null;
       if(p==="top"&&d){const n=S.tasks.filter(x=>x.id!==rec.id&&x.date===d&&x.priority==="top"&&!x.done).length;if(n>=3){err.textContent="That day already has 3 top tasks. Finish or downgrade one first.";return}}
-      data={...strip(rec),title:t,date:d,priority:p,mins,done:!!rec.done,createdAt:rec.createdAt||Date.now()}}
+      data={...strip(rec),title:t,date:d,priority:p,mins,done:!!rec.done,createdAt:rec.createdAt||Date.now()};{const fv=$("#fFor").value;if(fv)data.for=fv;else delete data.for}}
     else{const s=$("#fStart").value,en=$("#fEnd").value,days=[...form.querySelectorAll('#fDays [aria-pressed="true"]')].map(b=>+b.dataset.d);if(!days.length){err.textContent="Pick at least one day.";return}if(toMin(en)<=toMin(s)){err.textContent="End time needs to be after the start time.";return}data={...strip(rec),title:t,start:s,end:en,days,kind:k,skips:rec.skips||[]};{const u=$("#fUntil").value;if(u)data.until=u;else delete data.until}}
     if(type!=="tasks"){const rv=(form.querySelector('#fRem [aria-pressed="true"]')||{}).dataset?.r||"d";if(rv==="d")delete data.remind;else data.remind=+rv;const r2=(form.querySelector('#fRem2 [aria-pressed="true"]')||{}).dataset?.r||"n";if(r2==="n")delete data.remind2;else data.remind2=+r2;const bf=+((form.querySelector('#fBuf [aria-pressed="true"]')||{}).dataset?.b||0);if(bf)data.buffer=bf;else delete data.buffer;const nt=$("#fNotes").value.trim();if(nt)data.notes=nt;else delete data.notes}
     if(type!=="routines"){const pend=$("#fStepIn").value.trim();if(pend)addStep();const st=[...form.querySelectorAll("#fSteps .srow input")].map(i=>({text:i.value.trim(),done:i.dataset.done==="1"})).filter(x=>x.text);if(st.length)data.steps=st;else delete data.steps}
