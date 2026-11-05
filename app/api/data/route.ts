@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { COLLECTIONS, Collection, loadData, updateData } from "@/lib/store";
+import { getKeys } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export async function GET() {
     blocks: d.blocks,
     routines: d.routines,
     settings: d.settings,
-    alerts: { devices: d.subs.length, publicKey: process.env.VAPID_PUBLIC_KEY || null },
+    alerts: { devices: d.subs.length, publicKey: (await getKeys(d)).publicKey },
   });
 }
 

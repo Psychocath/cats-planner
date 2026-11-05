@@ -9,7 +9,7 @@ A personal day planner: time blocks, a Top 3, a weekly view, tasks and repeating
 - **Alerts:** web push. Vercel Cron calls `/api/cron/notify` every 5 minutes and alerts each device before blocks and routines start. On iPhone, add the app to your Home Screen first, then turn alerts on in Settings.
 
 ## Environment variables
-See `.env.example`. Generate push keys with `npm run vapid`.
+Only `APP_PASSWORD` is required; see `.env.example` for the optional ones. The app makes its own push keys on first run.
 
 ## Run locally
 ```

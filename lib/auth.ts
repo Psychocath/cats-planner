@@ -5,8 +5,9 @@ export const MAX_AGE = 60 * 60 * 24 * 180; // 180 days
 const enc = new TextEncoder();
 
 async function hmac(value: string): Promise<string> {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) throw new Error("SESSION_SECRET is not set");
+  // Changing APP_PASSWORD signs every device out, which is what you want after a password change.
+  const secret = process.env.SESSION_SECRET || (process.env.APP_PASSWORD ? `cats-planner:${process.env.APP_PASSWORD}` : "");
+  if (!secret) throw new Error("APP_PASSWORD is not set");
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, enc.encode(value));
   return btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");

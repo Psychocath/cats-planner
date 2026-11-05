@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { loadData, updateData, type PushSub } from "@/lib/store";
-import { pushReady, sendToAll } from "@/lib/push";
+import { sendToAll } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 
 // POST {action:"subscribe", subscription} | {action:"unsubscribe", endpoint} | {action:"test"}
 export async function POST(req: Request) {
-  if (!pushReady()) return NextResponse.json({ error: "Alerts aren't set up on the server yet." }, { status: 500 });
   const body = await req.json().catch(() => ({}));
 
   if (body.action === "subscribe") {
@@ -33,7 +32,7 @@ export async function POST(req: Request) {
   if (body.action === "test") {
     const d = await loadData();
     if (!d.subs.length) return NextResponse.json({ error: "No devices have alerts on yet." }, { status: 400 });
-    const { sent, dead } = await sendToAll(d.subs, { title: "Alerts are on", body: "You'll get a nudge before each block.", tag: "test" });
+    const { sent, dead } = await sendToAll(d.subs, { title: "Alerts are on", body: "You'll get a nudge before each block.", tag: "test" }, d);
     if (dead.length) await updateData((x) => void (x.subs = x.subs.filter((s) => !dead.includes(s.endpoint))));
     return NextResponse.json({ ok: true, sent });
   }

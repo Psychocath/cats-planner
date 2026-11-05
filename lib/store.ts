@@ -12,6 +12,7 @@ export type Data = {
   settings: Settings;
   subs: PushSub[];
   sent: Record<string, number>;
+  vapid?: { publicKey: string; privateKey: string };
 };
 export const COLLECTIONS = ["tasks", "blocks", "routines"] as const;
 export type Collection = (typeof COLLECTIONS)[number];
