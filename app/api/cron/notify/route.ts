@@ -32,25 +32,29 @@ export async function GET(req: Request) {
     ...itemsFor(data, now.date, now.wd).map((i) => ({ i, offset: 0 })),
     ...itemsFor(data, tomorrow.date, tomorrow.wd).map((i) => ({ i, offset: 1440 })),
   ];
-  const due = candidates.filter(({ i, offset }) => {
-    const remind = i.remind ?? lead;
-    if (remind < 0 || data.sent[i.key]) return false;
-    const alertAt = offset + toMin(i.start) - remind;
-    return alertAt <= now.minute + 2 && alertAt > now.minute - 10;
-  });
+  // Up to 2 alerts per item: its main reminder (or the default) and an optional second one.
+  const due = candidates.flatMap(({ i, offset }) =>
+    [i.remind ?? lead, i.remind2]
+      .map((remind, n) => ({ i, offset, remind, key: n ? `${i.key}|2` : i.key }))
+      .filter(({ remind, key }) => {
+        if (typeof remind !== "number" || remind < 0 || data.sent[key]) return false;
+        const alertAt = offset + toMin(i.start) - remind;
+        return alertAt <= now.minute + 2 && alertAt > now.minute - 10;
+      }),
+  );
   if (!due.length) return NextResponse.json({ ok: true, due: 0 });
 
   const dead = new Set<string>();
-  for (const { i, offset } of due) {
+  for (const { i, offset, key } of due) {
     const mins = offset + toMin(i.start) - now.minute;
     const when = mins <= 0 ? "Starting now" : mins >= 1440 ? "Tomorrow" : mins >= 60 ? `In ${Math.floor(mins / 60)} h${mins % 60 ? ` ${mins % 60} min` : ""}` : `In ${mins} min`;
-    const r = await sendToAll(data.subs, { title: i.title, body: `${when} · ${i.start}–${i.end}`, tag: i.key }, data);
+    const r = await sendToAll(data.subs, { title: i.title, body: `${when} · ${i.start}–${i.end}`, tag: key }, data);
     r.dead.forEach((e) => dead.add(e));
   }
 
   const weekAgo = Date.now() - 7 * 864e5;
   await updateData((d) => {
-    due.forEach(({ i }) => (d.sent[i.key] = Date.now()));
+    due.forEach(({ key }) => (d.sent[key] = Date.now()));
     for (const k of Object.keys(d.sent)) if (d.sent[k] < weekAgo) delete d.sent[k];
     if (dead.size) d.subs = d.subs.filter((s) => !dead.has(s.endpoint));
   });

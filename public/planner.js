@@ -74,10 +74,12 @@ function layoutLanes(items){
 function nowNext(ds){
   const n=new Date(),m=n.getHours()*60+n.getMinutes(),its=itemsFor(ds);
   const cur=its.filter(i=>toMin(i.start)<=m&&toMin(i.end)>m).pop(),nxt=its.find(i=>toMin(i.start)>m);
-  const card=(lab,it,empty)=>it?`<div class="k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}" style="cursor:pointer"><span class="label">${lab}</span><div class="when">${it.start}–${it.end}${lab==="Next"?" · in "+inFmt(toMin(it.start)-m):""}</div><b>${esc(it.title)}</b></div>`:`<div><span class="label">${lab}</span><b class="free">${empty}</b></div>`;
-  return `<div class="nn">${card("Now",cur,"Free time")}${card("Next",nxt,"Nothing else today")}</div>`;
+  const card=(lab,it,empty)=>{if(!it)return null;const s0=toMin(it.start),e0=toMin(it.end),pct=Math.max(0,Math.min(100,Math.round((m-s0)/(e0-s0)*100)));
+    return `<div class="k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}" style="cursor:pointer"><span class="label">${lab}</span><div class="when">${it.start}–${it.end}${lab==="Next"?" · in "+inFmt(s0-m):""}</div><b>${esc(it.title)}</b>${lab==="Now"?`<div class="left"><div class="bar"><span style="width:${pct}%"></span></div><span class="lt">${inFmt(e0-m)} left</span></div>`:""}</div>`};
+  const card0=(lab,it,empty)=>card(lab,it)||`<div><span class="label">${lab}</span><b class="free">${empty}</b></div>`;
+  return `<div class="nn">${card0("Now",cur,"Free time")}${card0("Next",nxt,"Nothing else today")}</div>`;
 }
-function busy(ds){const r=itemsFor(ds).map(i=>[toMin(i.start),toMin(i.end)]).sort((a,b)=>a[0]-b[0]),m=[];r.forEach(x=>{const l=m[m.length-1];if(l&&x[0]<=l[1])l[1]=Math.max(l[1],x[1]);else m.push([...x])});return m}
+function busy(ds){const r=itemsFor(ds).map(i=>[toMin(i.start),toMin(i.end)+(i.buffer||0)]).sort((a,b)=>a[0]-b[0]),m=[];r.forEach(x=>{const l=m[m.length-1];if(l&&x[0]<=l[1])l[1]=Math.max(l[1],x[1]);else m.push([...x])});return m}
 function freeWork(ds){const ws=toMin(S.work.start),we=toMin(S.work.end);let free=we-ws;busy(ds).forEach(([a,b])=>{free-=Math.max(0,Math.min(b,we)-Math.max(a,ws))});return Math.max(0,free)}
 function firstGap(ds,mins){const ws=toMin(S.work.start),we=toMin(S.work.end);let t=ws;if(ds===todayStr()){const n=new Date(),nm=n.getHours()*60+n.getMinutes();t=Math.max(t,Math.ceil(nm/15)*15)}for(const[a,b]of busy(ds)){if(a-t>=mins&&t+mins<=we)return t;t=Math.max(t,b)}return t+mins<=we?t:null}
 const REMINDS=[["d","Default"],[-1,"None"],[0,"At start"],[5,"5 min"],[15,"15 min"],[30,"30 min"],[60,"1 h"],[120,"2 h"],[1440,"1 day"]];
@@ -90,7 +92,8 @@ function renderDay(){
   const dayTasks=S.tasks.filter(t=>t.date===ds);
   const top=dayTasks.filter(t=>t.priority==="top").slice(0,3);
   let h=isToday?nowNext(ds):"";
-  h+=`<h2>Top 3 for ${isToday?"today":fmt(S.cur,{weekday:"long"})}</h2><div class="top3">`;
+  const nDone=top.filter(t=>t.done).length;
+  h+=`<div class="t3h"><h2>Top 3 for ${isToday?"today":fmt(S.cur,{weekday:"long"})}</h2>${top.length?`<span class="cnt ${nDone===top.length?"all":""}">${nDone===top.length?"✓ ":""}${nDone} of ${top.length} done</span>`:""}</div><div class="top3">`;
   h+=top.map((t,i)=>`<div class="t3 ${t.done?"done":""}"><span class="n">${i+1}</span><span class="tt">${esc(t.title)}${t.example?'<span class="ex">Example</span>':""}</span><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button></div>`).join("");
   if(top.length<3)h+=`<button class="addline" data-addtop="${ds}">+ Top task</button>`;
   h+=`</div>`;
@@ -104,6 +107,7 @@ function renderDay(){
   let rail="",grid="";
   for(let hr=sH;hr<=eH;hr++){const top=y(hr*60);rail+=`<span style="top:${top}px">${pad(hr%24)}:00</span>`;grid+=`<div class="hr" style="top:${top}px"></div>`;if(hr<eH)grid+=`<div class="hr half" style="top:${y(hr*60+30)}px"></div><button class="slot" data-slot="${pad(hr)}:00" style="top:${top}px;height:${30*ppm}px" aria-label="Add block at ${pad(hr)}:00"></button><button class="slot" data-slot="${pad(hr)}:30" style="top:${y(hr*60+30)}px;height:${30*ppm}px" aria-label="Add block at ${pad(hr)}:30"></button>`}
   {const ws=toMin(S.work.start),we=toMin(S.work.end);if(ws>sH*60)grid+=`<div class="off" style="top:0;height:${y(ws)}px"></div>`;if(we<eH*60)grid+=`<div class="off" style="top:${y(we)}px;height:${y(eH*60)-y(we)}px"></div>`;if(wd(S.cur)<=5)grid+=`<span class="wl" style="top:${y(ws)}px">Work day starts</span><span class="wl" style="top:${y(we)}px">Work day ends</span>`}
+  items.forEach(it=>{if(!it.buffer)return;const bs=toMin(it.end),be=Math.min(bs+it.buffer,eH*60);if(be>bs)grid+=`<div class="buf" style="top:${y(bs)+1}px;height:${(be-bs)*ppm-2}px"><span>Buffer ${it.buffer} min</span></div>`});
   items.forEach(it=>{const s=Math.max(toMin(it.start),sH*60),e=Math.min(Math.max(toMin(it.end),s+15),eH*60);if(e<=s)return;const w=100/it._lanes,ht=(e-s)*ppm-2,short=ht<60;
     grid+=`<button class="blk k-${it.kind||"work"} ${it.src==="routines"?"rt":""} ${short?"short":""}" data-open="${it.src}:${it.id}:${ds}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><b>${esc(it.title)}</b><span class="tm">${it.src==="routines"?"↻ ":""}${it.start}${short?"":"–"+it.end}</span></button>`});
   if(isToday&&nm>=sH*60&&nm<=eH*60)grid+=`<div class="now" style="top:${y(nm)}px"></div>`;
@@ -146,7 +150,8 @@ function openDetails(col,rec,date){
   if(d)rows.push(["When",`${fmt(d,{weekday:"long",day:1,month:"long"})}`]);
   rows.push(["Time",`${rec.start}–${rec.end} · ${durFmt(rec.start,rec.end)}`]);
   if(isR)rows.push(["Repeats",dayLabel(rec.days)]);
-  rows.push(["Reminder",remindLabel(rec.remind)]);
+  rows.push(["Reminder",remindLabel(rec.remind)+(typeof rec.remind2==="number"?" + "+remindLabel(rec.remind2):"")]);
+  if(rec.buffer)rows.push(["Buffer",rec.buffer+" min after"]);
   if(rec.notes)rows.push(["Notes",esc(rec.notes).replace(/\n/g,"<br>")]);
   const skipped=isR&&date&&(rec.skips||[]).includes(date);
   $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(rec.title)}"><div class="in"><div class="dhead k-${rec.kind||"work"}"><span class="chip">${KINDS[rec.kind]||"Work"}${isR?" · ↻":""}</span><h3>${esc(rec.title)}</h3></div><dl class="dl">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl><div class="acts"><button class="primary" id="dEdit" type="button">Edit</button>${isR&&date?`<button class="ghost" id="dSkip" type="button">${skipped?"Bring back this day":"Skip this day"}</button>`:""}<button class="ghost" id="dClose" type="button">Close</button></div></div></div>`;
@@ -197,7 +202,7 @@ function openSheet(type,rec,preset){
     f+=`<div class="two"><div class="f"><label for="fStart">Start</label><input id="fStart" type="time" step="900" value="${rec.start||"08:00"}"></div><div class="f"><label for="fEnd">End</label><input id="fEnd" type="time" step="900" value="${rec.end||"08:30"}"></div></div><div class="f"><span class="lb">Repeats on</span><div class="opts" id="fDays">${DAYN.map((n,i)=>`<button type="button" data-d="${i+1}" aria-pressed="${days.includes(i+1)}">${n}</button>`).join("")}</div></div>`+kindOpts;
   }
   if(type!=="tasks"){const cur=rec.remind===undefined||rec.remind===null?"d":String(rec.remind);
-    f+=`<div class="f"><span class="lb">Reminder</span><div class="opts" id="fRem">${REMINDS.map(([v,l])=>`<button type="button" data-r="${v}" aria-pressed="${String(v)===cur}">${v==="d"?l+" ("+S.lead+" min)":l}</button>`).join("")}</div></div><div class="f"><label for="fNotes">Notes</label><textarea id="fNotes" rows="3">${esc(rec.notes||"")}</textarea></div>`}
+    f+=`<div class="f"><span class="lb">Reminder</span><div class="opts" id="fRem">${REMINDS.map(([v,l])=>`<button type="button" data-r="${v}" aria-pressed="${String(v)===cur}">${v==="d"?l+" ("+S.lead+" min)":l}</button>`).join("")}</div></div><div class="f"><span class="lb">Second reminder</span><div class="opts" id="fRem2">${[["n","None"],[0,"At start"],[5,"5 min"],[15,"15 min"],[30,"30 min"],[60,"1 h"],[1440,"1 day"]].map(([v,l])=>`<button type="button" data-r="${v}" aria-pressed="${String(v)===(typeof rec.remind2==="number"?String(rec.remind2):"n")}">${l}</button>`).join("")}</div></div><div class="f"><span class="lb">Buffer after</span><div class="opts" id="fBuf">${[0,10,15,30].map(v=>`<button type="button" data-b="${v}" aria-pressed="${v===(rec.buffer??preset.buffer??0)}">${v?v+" min":"None"}</button>`).join("")}</div></div><div class="f"><label for="fNotes">Notes</label><textarea id="fNotes" rows="3">${esc(rec.notes||"")}</textarea></div>`}
   const skipBtn="";
   $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${isNew?"New":"Edit"} ${title}"><form class="in" id="fForm"><h3>${isNew?"New":"Edit"} ${title}</h3>${f}<div class="err" id="fErr"></div><div class="acts"><button class="primary" type="submit">${isNew?"Add":"Save"}</button>${isNew?"":`<button type="button" class="danger" id="fDel">Delete</button>`}<button type="button" class="ghost" id="fCancel">Cancel</button></div>${skipBtn}</form></div>`;
   const form=$("#fForm");
@@ -213,7 +218,7 @@ function openSheet(type,rec,preset){
       if(p==="top"&&d){const n=S.tasks.filter(x=>x.id!==rec.id&&x.date===d&&x.priority==="top"&&!x.done).length;if(n>=3){err.textContent="That day already has 3 top tasks. Finish or downgrade one first.";return}}
       data={...strip(rec),title:t,date:d,priority:p,mins,done:!!rec.done,createdAt:rec.createdAt||Date.now()}}
     else{const s=$("#fStart").value,en=$("#fEnd").value,days=[...form.querySelectorAll('#fDays [aria-pressed="true"]')].map(b=>+b.dataset.d);if(!days.length){err.textContent="Pick at least one day.";return}if(toMin(en)<=toMin(s)){err.textContent="End time needs to be after the start time.";return}data={...strip(rec),title:t,start:s,end:en,days,kind:k,skips:rec.skips||[]}}
-    if(type!=="tasks"){const rv=(form.querySelector('#fRem [aria-pressed="true"]')||{}).dataset?.r||"d";if(rv==="d")delete data.remind;else data.remind=+rv;const nt=$("#fNotes").value.trim();if(nt)data.notes=nt;else delete data.notes}
+    if(type!=="tasks"){const rv=(form.querySelector('#fRem [aria-pressed="true"]')||{}).dataset?.r||"d";if(rv==="d")delete data.remind;else data.remind=+rv;const r2=(form.querySelector('#fRem2 [aria-pressed="true"]')||{}).dataset?.r||"n";if(r2==="n")delete data.remind2;else data.remind2=+r2;const bf=+((form.querySelector('#fBuf [aria-pressed="true"]')||{}).dataset?.b||0);if(bf)data.buffer=bf;else delete data.buffer;const nt=$("#fNotes").value.trim();if(nt)data.notes=nt;else delete data.notes}
     delete data.example;save(type,rec.id||uid(),data);closeSheet();toast(isNew?"Added":"Saved")};
 }
 const strip=r=>{const o={...r};delete o.id;delete o.src;delete o._lane;delete o._lanes;return o};

@@ -26,7 +26,7 @@ export function localNow(at = new Date()) {
   return { date: `${parts.year}-${parts.month}-${parts.day}`, minute: Number(parts.hour) * 60 + Number(parts.minute), wd };
 }
 
-export type Planned = { key: string; title: string; start: string; end: string; routine: boolean; remind?: number };
+export type Planned = { key: string; title: string; start: string; end: string; routine: boolean; remind?: number; remind2?: number };
 
 /** Date (YYYY-MM-DD) and weekday n days after the given date. */
 export function shiftDate(date: string, n: number) {
@@ -38,9 +38,9 @@ export function shiftDate(date: string, n: number) {
 export function itemsFor(d: Data, date: string, wd: number): Planned[] {
   const blocks = d.blocks
     .filter((b) => b.date === date)
-    .map((b: Item) => ({ key: `${date}|b:${b.id}|${b.start}`, title: String(b.title), start: String(b.start), end: String(b.end), routine: false, remind: typeof b.remind === "number" ? b.remind : undefined }));
+    .map((b: Item) => ({ key: `${date}|b:${b.id}|${b.start}`, title: String(b.title), start: String(b.start), end: String(b.end), routine: false, remind: typeof b.remind === "number" ? b.remind : undefined, remind2: typeof b.remind2 === "number" ? b.remind2 : undefined }));
   const routines = d.routines
     .filter((r) => ((r.days as number[]) || []).includes(wd) && !((r.skips as string[]) || []).includes(date))
-    .map((r: Item) => ({ key: `${date}|r:${r.id}|${r.start}`, title: String(r.title), start: String(r.start), end: String(r.end), routine: true, remind: typeof r.remind === "number" ? r.remind : undefined }));
+    .map((r: Item) => ({ key: `${date}|r:${r.id}|${r.start}`, title: String(r.title), start: String(r.start), end: String(r.end), routine: true, remind: typeof r.remind === "number" ? r.remind : undefined, remind2: typeof r.remind2 === "number" ? r.remind2 : undefined }));
   return [...blocks, ...routines].sort((a, b) => toMin(a.start) - toMin(b.start));
 }
