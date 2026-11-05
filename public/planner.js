@@ -55,12 +55,13 @@ function renderHeader(){
   let sub="",main="";
   if(S.view==="day"){const t=new Date();t.setHours(0,0,0,0);const diff=Math.round((c-t)/864e5);sub=diff===0?"Today":diff===1?"Tomorrow":diff===-1?"Yesterday":DAYL[wd(c)-1];main=fmt(c,{weekday:"short",day:1,month:"short"})}
   else if(S.view==="week"){const m=addDays(c,1-wd(c)),s=addDays(m,6);sub="Week";main=fmt(m,{day:1,month:"short"})+" to "+fmt(s,{day:1,month:"short"})}
+  else if(S.view==="month"){sub=String(c.getFullYear());main=MONL[c.getMonth()]}
   else if(S.view==="tasks"){sub=fmt(new Date(),{weekday:"long",day:1,month:"long"});main="Tasks"}
   else{sub="Repeats every week";main="Routines"}
   $("#dsub").textContent=sub;$("#dmain").textContent=main;
-  const nav=S.view==="day"||S.view==="week";
-  $("#prev").hidden=!nav;$("#next").hidden=!nav;$("#todayBtn").hidden=!nav||(S.view==="day"&&isToday)||(S.view==="week"&&ymd(addDays(c,1-wd(c)))===ymd(addDays(new Date(),1-wd(new Date()))));
-  $("#fab").textContent={day:"+ Block",week:"+ Block",tasks:"+ Task",routines:"+ Routine"}[S.view];
+  const nav=S.view==="day"||S.view==="week"||S.view==="month";
+  $("#prev").hidden=!nav;$("#next").hidden=!nav;$("#todayBtn").hidden=!nav||(S.view==="day"&&isToday)||(S.view==="week"&&ymd(addDays(c,1-wd(c)))===ymd(addDays(new Date(),1-wd(new Date()))))||(S.view==="month"&&c.getMonth()===new Date().getMonth()&&c.getFullYear()===new Date().getFullYear());
+  $("#fab").textContent={day:"+ Block",week:"+ Block",month:"+ Block",tasks:"+ Task",routines:"+ Routine"}[S.view];
 }
 
 /* ---------- day ---------- */
@@ -73,12 +74,15 @@ function layoutLanes(items){
 function nowNext(ds){
   const n=new Date(),m=n.getHours()*60+n.getMinutes(),its=itemsFor(ds);
   const cur=its.filter(i=>toMin(i.start)<=m&&toMin(i.end)>m).pop(),nxt=its.find(i=>toMin(i.start)>m);
-  const card=(lab,it,empty)=>it?`<div class="k-${it.kind||"work"}" data-open="${it.src}:${it.id}" style="cursor:pointer"><span class="label">${lab}</span><div class="when">${it.start}–${it.end}${lab==="Next"?" · in "+inFmt(toMin(it.start)-m):""}</div><b>${esc(it.title)}</b></div>`:`<div><span class="label">${lab}</span><b class="free">${empty}</b></div>`;
+  const card=(lab,it,empty)=>it?`<div class="k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}" style="cursor:pointer"><span class="label">${lab}</span><div class="when">${it.start}–${it.end}${lab==="Next"?" · in "+inFmt(toMin(it.start)-m):""}</div><b>${esc(it.title)}</b></div>`:`<div><span class="label">${lab}</span><b class="free">${empty}</b></div>`;
   return `<div class="nn">${card("Now",cur,"Free time")}${card("Next",nxt,"Nothing else today")}</div>`;
 }
 function busy(ds){const r=itemsFor(ds).map(i=>[toMin(i.start),toMin(i.end)]).sort((a,b)=>a[0]-b[0]),m=[];r.forEach(x=>{const l=m[m.length-1];if(l&&x[0]<=l[1])l[1]=Math.max(l[1],x[1]);else m.push([...x])});return m}
 function freeWork(ds){const ws=toMin(S.work.start),we=toMin(S.work.end);let free=we-ws;busy(ds).forEach(([a,b])=>{free-=Math.max(0,Math.min(b,we)-Math.max(a,ws))});return Math.max(0,free)}
 function firstGap(ds,mins){const ws=toMin(S.work.start),we=toMin(S.work.end);let t=ws;if(ds===todayStr()){const n=new Date(),nm=n.getHours()*60+n.getMinutes();t=Math.max(t,Math.ceil(nm/15)*15)}for(const[a,b]of busy(ds)){if(a-t>=mins&&t+mins<=we)return t;t=Math.max(t,b)}return t+mins<=we?t:null}
+const REMINDS=[["d","Default"],[-1,"None"],[0,"At start"],[5,"5 min"],[15,"15 min"],[30,"30 min"],[60,"1 h"],[120,"2 h"],[1440,"1 day"]];
+const remindLabel=r=>r===undefined||r===null?`${S.lead} min before (default)`:r<0?"No reminder":r===0?"At start":r>=1440?(r/1440)+" day"+(r>1440?"s":"")+" before":r>=60?(r/60)+" h before":r+" min before";
+const durFmt=(a,b)=>inFmt(toMin(b)-toMin(a));
 const hm=m=>pad(Math.floor(m/60))+":"+pad(m%60);
 const inFmt=x=>x<60?x+" min":Math.floor(x/60)+" h"+(x%60?" "+(x%60)+" min":"");
 function renderDay(){
@@ -88,7 +92,7 @@ function renderDay(){
   let h=isToday?nowNext(ds):"";
   h+=`<h2>Top 3 for ${isToday?"today":fmt(S.cur,{weekday:"long"})}</h2><div class="top3">`;
   h+=top.map((t,i)=>`<div class="t3 ${t.done?"done":""}"><span class="n">${i+1}</span><span class="tt">${esc(t.title)}${t.example?'<span class="ex">Example</span>':""}</span><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button></div>`).join("");
-  if(top.length<3)h+=`<button class="addline" data-addtop="${ds}">+ Add a top task${top.length?"":" (pick the 3 things that make today a win)"}</button>`;
+  if(top.length<3)h+=`<button class="addline" data-addtop="${ds}">+ Top task</button>`;
   h+=`</div>`;
   const raw=itemsFor(ds),items=layoutLanes(raw);
   const n=new Date(),nm=n.getHours()*60+n.getMinutes();
@@ -101,11 +105,10 @@ function renderDay(){
   for(let hr=sH;hr<=eH;hr++){const top=y(hr*60);rail+=`<span style="top:${top}px">${pad(hr%24)}:00</span>`;grid+=`<div class="hr" style="top:${top}px"></div>`;if(hr<eH)grid+=`<div class="hr half" style="top:${y(hr*60+30)}px"></div><button class="slot" data-slot="${pad(hr)}:00" style="top:${top}px;height:${30*ppm}px" aria-label="Add block at ${pad(hr)}:00"></button><button class="slot" data-slot="${pad(hr)}:30" style="top:${y(hr*60+30)}px;height:${30*ppm}px" aria-label="Add block at ${pad(hr)}:30"></button>`}
   {const ws=toMin(S.work.start),we=toMin(S.work.end);if(ws>sH*60)grid+=`<div class="off" style="top:0;height:${y(ws)}px"></div>`;if(we<eH*60)grid+=`<div class="off" style="top:${y(we)}px;height:${y(eH*60)-y(we)}px"></div>`;if(wd(S.cur)<=5)grid+=`<span class="wl" style="top:${y(ws)}px">Work day starts</span><span class="wl" style="top:${y(we)}px">Work day ends</span>`}
   items.forEach(it=>{const s=Math.max(toMin(it.start),sH*60),e=Math.min(Math.max(toMin(it.end),s+15),eH*60);if(e<=s)return;const w=100/it._lanes,ht=(e-s)*ppm-2,short=ht<60;
-    grid+=`<button class="blk k-${it.kind||"work"} ${it.src==="routines"?"rt":""} ${short?"short":""}" data-open="${it.src}:${it.id}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><b>${esc(it.title)}</b><span class="tm">${it.src==="routines"?"↻ ":""}${it.start}${short?"":"–"+it.end}</span></button>`});
+    grid+=`<button class="blk k-${it.kind||"work"} ${it.src==="routines"?"rt":""} ${short?"short":""}" data-open="${it.src}:${it.id}:${ds}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><b>${esc(it.title)}</b><span class="tm">${it.src==="routines"?"↻ ":""}${it.start}${short?"":"–"+it.end}</span></button>`});
   if(isToday&&nm>=sH*60&&nm<=eH*60)grid+=`<div class="now" style="top:${y(nm)}px"></div>`;
-  const fw=freeWork(ds);h+=`<h2>Plan</h2><p class="label" style="margin:0 0 6px">${wd(S.cur)<=5?(fw?inFmt(fw)+" free in your work day":"Work day fully booked")+" · ":""}Tap a gap to add · ↻ repeats</p>`;
+  const fw=freeWork(ds);h+=`<h2>Plan</h2><p class="label" style="margin:0 0 6px">${wd(S.cur)<=5?(fw?inFmt(fw)+" free in your work day":"Work day fully booked"):""}</p>`;
   h+=`<div class="tl" style="height:${height}px"><div class="rail">${rail}</div><div class="grid">${grid}</div></div>`;
-  if(!S.alertsHere)h+=`<div class="sendrow"><p>Get a phone alert ${S.lead} min before each block.</p><button class="ghost" data-settings="1">Turn on alerts</button></div>`;
   $("#view").innerHTML=h;
   if(isToday&&!renderDay._scrolled){renderDay._scrolled=true;const el=document.querySelector(".tl");if(el){const top=el.getBoundingClientRect().top+scrollY+y(Math.max(nm-60,sH*60))-180;if(top>200)scrollTo({top})}}
 }
@@ -114,10 +117,42 @@ function renderDay(){
 function renderWeek(){
   const m=addDays(S.cur,1-wd(S.cur));let h=`<div class="week" style="margin-top:14px">`;
   for(let i=0;i<7;i++){const d=addDays(m,i),ds=ymd(d),its=itemsFor(ds),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length;
-    h+=`<section class="wd ${ds===todayStr()?"today":""}"><header data-goday="${ds}"><span class="d">${fmt(d,{weekday:"short",day:1,month:"short"})}</span><span class="c">${tc?tc+" task"+(tc>1?"s":"")+" · ":""}${its.length} block${its.length===1?"":"s"}</span></header>`;
-    h+=its.length?its.map(it=>`<div class="wi k-${it.kind||"work"}"><span class="tm">${it.start}–${it.end}</span><span class="dot"></span><span class="tt">${esc(it.title)}</span></div>`).join(""):`<div class="wi"><span class="tt" style="color:var(--muted)">Nothing planned</span></div>`;
+    h+=`<section class="wd ${ds===todayStr()?"today":""}"><header data-goday="${ds}"><span class="d">${fmt(d,{weekday:"short",day:1,month:"short"})}</span><span class="c">${tc?tc+" task"+(tc>1?"s":"")+" · ":""}${its.length} item${its.length===1?"":"s"}</span></header>`;
+    h+=its.length?its.map(it=>`<button class="wi k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}"><span class="tm">${it.start}–${it.end}</span><span class="dot"></span><span class="tt">${esc(it.title)}</span></button>`).join(""):`<div class="wi"><span class="tt" style="color:var(--muted)">Nothing planned</span></div>`;
     h+=`</section>`}
   $("#view").innerHTML=h+"</div>";
+}
+
+/* ---------- month ---------- */
+function renderMonth(){
+  const first=new Date(S.cur.getFullYear(),S.cur.getMonth(),1),start=addDays(first,1-wd(first)),td=todayStr();
+  if(!S.sel||fromYmd(S.sel).getMonth()!==first.getMonth())S.sel=ymd(S.cur);
+  let h=`<div class="mgrid" role="grid"><div class="mhead">${DAYN.map(d=>`<span>${d.slice(0,2)}</span>`).join("")}</div><div class="mdays">`;
+  for(let i=0;i<42;i++){const d=addDays(start,i),ds=ymd(d);if(i>=35&&d.getMonth()!==first.getMonth())break;
+    const its=itemsFor(ds),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length,out=d.getMonth()!==first.getMonth();
+    const hol=its.find(x=>/^Public holiday/i.test(x.title));
+    h+=`<button class="mday ${out?"out":""} ${ds===td?"today":""} ${ds===S.sel?"sel":""} ${hol?"hol":""}" data-sel="${ds}" aria-label="${fmt(d,{weekday:"long",day:1,month:"long"})}, ${its.length} items"><span class="num">${d.getDate()}</span><span class="dots">${its.slice(0,4).map(x=>`<i class="k-${x.kind||"work"}"></i>`).join("")}${its.length>4?"<em>+</em>":""}</span>${tc?`<span class="tc">${tc}</span>`:""}</button>`}
+  h+=`</div></div>`;
+  const sd=fromYmd(S.sel),its=itemsFor(S.sel),tasks=S.tasks.filter(t=>t.date===S.sel);
+  h+=`<div class="mlist"><header class="mlh"><h2>${fmt(sd,{weekday:"long",day:1,month:"long"})}</h2><button class="ghost" data-goday="${S.sel}">Open day</button></header>`;
+  h+=its.length||tasks.length?`<div class="week"><section class="wd">${its.map(it=>`<button class="wi k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${S.sel}"><span class="tm">${it.start}–${it.end}</span><span class="dot"></span><span class="tt">${esc(it.title)}</span></button>`).join("")}${tasks.map(t=>`<button class="wi" data-open="tasks:${t.id}"><span class="tm">${t.priority==="top"?"★ Top":"Task"}</span><span class="dot" style="background:var(--muted)"></span><span class="tt ${t.done?"strike":""}">${esc(t.title)}</span></button>`).join("")}</section></div>`:`<div class="empty">Nothing planned</div>`;
+  $("#view").innerHTML=h+`</div>`;
+}
+
+/* ---------- details ---------- */
+function openDetails(col,rec,date){
+  const isR=col==="routines",d=date?fromYmd(date):null;
+  const rows=[];
+  if(d)rows.push(["When",`${fmt(d,{weekday:"long",day:1,month:"long"})}`]);
+  rows.push(["Time",`${rec.start}–${rec.end} · ${durFmt(rec.start,rec.end)}`]);
+  if(isR)rows.push(["Repeats",dayLabel(rec.days)]);
+  rows.push(["Reminder",remindLabel(rec.remind)]);
+  if(rec.notes)rows.push(["Notes",esc(rec.notes).replace(/\n/g,"<br>")]);
+  const skipped=isR&&date&&(rec.skips||[]).includes(date);
+  $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(rec.title)}"><div class="in"><div class="dhead k-${rec.kind||"work"}"><span class="chip">${KINDS[rec.kind]||"Work"}${isR?" · ↻":""}</span><h3>${esc(rec.title)}</h3></div><dl class="dl">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl><div class="acts"><button class="primary" id="dEdit" type="button">Edit</button>${isR&&date?`<button class="ghost" id="dSkip" type="button">${skipped?"Bring back this day":"Skip this day"}</button>`:""}<button class="ghost" id="dClose" type="button">Close</button></div></div></div>`;
+  $("#scrim").onclick=closeSheet;$("#dClose").onclick=closeSheet;
+  $("#dEdit").onclick=()=>openSheet(col,rec,{});
+  const sk=$("#dSkip");if(sk)sk.onclick=()=>{const set=new Set(rec.skips||[]);skipped?set.delete(date):set.add(date);save("routines",rec.id,{...strip(rec),skips:[...set]});closeSheet();toast(skipped?"Back on":"Skipped for that day")};
 }
 
 /* ---------- tasks ---------- */
@@ -128,9 +163,8 @@ function renderTasks(){
   const byP=(a,b)=>(a.priority==="top"?0:1)-(b.priority==="top"?0:1)||(a.date||"9").localeCompare(b.date||"9");
   const today=open.filter(t=>t.date&&t.date<=td).sort(byP),later=open.filter(t=>t.date&&t.date>td).sort(byP),inbox=open.filter(t=>!t.date).sort(byP);
   const sec=(name,list,empty)=>`<h2>${name}</h2>`+(list.length?`<div class="list">${list.map(taskRow).join("")}</div>`:`<div class="empty">${empty}</div>`);
-  let h=`<form class="quick" id="quick"><input id="quickIn" placeholder="Brain dump a task…" autocomplete="off" aria-label="New task"><button type="submit">Add</button></form>`+sec("Today and overdue",today,"Nothing due today. Add a task, or pull one in from the inbox.")+sec("Inbox",inbox,"Tasks without a date land here.")+sec("Coming up",later,"No dated tasks after today.");
+  let h=`<form class="quick" id="quick"><input id="quickIn" placeholder="New task" autocomplete="off" aria-label="New task"><button type="submit">Add</button></form>`+sec("Today and overdue",today,"Nothing due")+sec("Inbox",inbox,"Empty")+sec("Coming up",later,"Nothing coming up");
   if(done.length)h+=`<details><summary>Done (${done.length})</summary><div class="list">${done.map(taskRow).join("")}</div></details>`;
-  if(S.tasks.some(t=>t.example)||S.blocks.some(t=>t.example)||S.routines.some(t=>t.example))h+=`<div class="sendrow"><p>Items marked Example were added to show how the planner works.</p><button class="ghost" id="clearEx">Clear examples</button></div>`;
   $("#view").innerHTML=h;
 }
 
@@ -138,12 +172,12 @@ function renderTasks(){
 function renderRoutines(){
   const list=[...S.routines].sort((a,b)=>toMin(a.start)-toMin(b.start));
   let h=`<h2>Every week</h2>`;
-  h+=list.length?`<div class="list">${list.map(r=>`<div class="row k-${r.kind||"work"}"><button class="tt" data-open="routines:${r.id}"><div>${esc(r.title)}${r.example?'<span class="ex">Example</span>':""}</div><div class="meta">${r.start}–${r.end} · ${dayLabel(r.days)}</div></button><span class="chip">${KINDS[r.kind]||"Work"}</span></div>`).join("")}</div>`:`<div class="empty">Add the things that repeat, like drop-off, nap time or your admin hour, and they fill each day automatically.</div>`;
+  h+=list.length?`<div class="list">${list.map(r=>`<div class="row k-${r.kind||"work"}"><button class="tt" data-open="routines:${r.id}"><div>${esc(r.title)}${r.example?'<span class="ex">Example</span>':""}</div><div class="meta">${r.start}–${r.end} · ${dayLabel(r.days)}</div></button><span class="chip">${KINDS[r.kind]||"Work"}</span></div>`).join("")}</div>`:`<div class="empty">No routines</div>`;
   $("#view").innerHTML=h;
 }
 function dayLabel(days){days=[...(days||[])].sort();if(days.length===7)return"Every day";if(days.join()==="1,2,3,4,5")return"Weekdays";if(days.join()==="6,7")return"Weekends";return days.map(d=>DAYN[d-1]).join(", ")}
 
-function render(){renderHeader();({day:renderDay,week:renderWeek,tasks:renderTasks,routines:renderRoutines})[S.view]()}
+function render(){renderHeader();({day:renderDay,week:renderWeek,month:renderMonth,tasks:renderTasks,routines:renderRoutines})[S.view]()}
 
 /* ---------- sheet ---------- */
 function closeSheet(){$("#sheetRoot").innerHTML=""}
@@ -162,13 +196,14 @@ function openSheet(type,rec,preset){
     const days=rec.days||[1,2,3,4,5];
     f+=`<div class="two"><div class="f"><label for="fStart">Start</label><input id="fStart" type="time" step="900" value="${rec.start||"08:00"}"></div><div class="f"><label for="fEnd">End</label><input id="fEnd" type="time" step="900" value="${rec.end||"08:30"}"></div></div><div class="f"><span class="lb">Repeats on</span><div class="opts" id="fDays">${DAYN.map((n,i)=>`<button type="button" data-d="${i+1}" aria-pressed="${days.includes(i+1)}">${n}</button>`).join("")}</div></div>`+kindOpts;
   }
-  const skipBtn=(type==="routines"&&preset.onDate)?`<button type="button" class="ghost" id="fSkip">Skip on ${fmt(fromYmd(preset.onDate),{weekday:"short",day:1,month:"short"})}</button>`:"";
+  if(type!=="tasks"){const cur=rec.remind===undefined||rec.remind===null?"d":String(rec.remind);
+    f+=`<div class="f"><span class="lb">Reminder</span><div class="opts" id="fRem">${REMINDS.map(([v,l])=>`<button type="button" data-r="${v}" aria-pressed="${String(v)===cur}">${v==="d"?l+" ("+S.lead+" min)":l}</button>`).join("")}</div></div><div class="f"><label for="fNotes">Notes</label><textarea id="fNotes" rows="3">${esc(rec.notes||"")}</textarea></div>`}
+  const skipBtn="";
   $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${isNew?"New":"Edit"} ${title}"><form class="in" id="fForm"><h3>${isNew?"New":"Edit"} ${title}</h3>${f}<div class="err" id="fErr"></div><div class="acts"><button class="primary" type="submit">${isNew?"Add":"Save"}</button>${isNew?"":`<button type="button" class="danger" id="fDel">Delete</button>`}<button type="button" class="ghost" id="fCancel">Cancel</button></div>${skipBtn}</form></div>`;
   const form=$("#fForm");
   form.querySelectorAll(".opts").forEach(g=>g.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(g.id==="fDays")b.setAttribute("aria-pressed",b.getAttribute("aria-pressed")==="true"?"false":"true");else{g.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")}}));
   $("#scrim").onclick=closeSheet;$("#fCancel").onclick=closeSheet;
   if(!isNew){const del=$("#fDel");del.onclick=()=>{if(del.dataset.armed){remove(type,rec.id);closeSheet();toast("Deleted")}else{del.dataset.armed=1;del.textContent=type==="routines"?"Delete every week?":"Tap again to delete"}}}
-  if(skipBtn)$("#fSkip").onclick=()=>{save("routines",rec.id,{...strip(rec),skips:[...(rec.skips||[]),preset.onDate]});closeSheet();toast("Skipped for that day")};
   setTimeout(()=>{if(isNew)$("#fTitle").focus()},50);
   form.onsubmit=e=>{e.preventDefault();const err=$("#fErr");const t=$("#fTitle").value.trim();if(!t){err.textContent="Give it a name first.";return}
     const k=(form.querySelector('#fKind [aria-pressed="true"]')||{}).dataset?.k||"work";
@@ -178,6 +213,7 @@ function openSheet(type,rec,preset){
       if(p==="top"&&d){const n=S.tasks.filter(x=>x.id!==rec.id&&x.date===d&&x.priority==="top"&&!x.done).length;if(n>=3){err.textContent="That day already has 3 top tasks. Finish or downgrade one first.";return}}
       data={...strip(rec),title:t,date:d,priority:p,mins,done:!!rec.done,createdAt:rec.createdAt||Date.now()}}
     else{const s=$("#fStart").value,en=$("#fEnd").value,days=[...form.querySelectorAll('#fDays [aria-pressed="true"]')].map(b=>+b.dataset.d);if(!days.length){err.textContent="Pick at least one day.";return}if(toMin(en)<=toMin(s)){err.textContent="End time needs to be after the start time.";return}data={...strip(rec),title:t,start:s,end:en,days,kind:k,skips:rec.skips||[]}}
+    if(type!=="tasks"){const rv=(form.querySelector('#fRem [aria-pressed="true"]')||{}).dataset?.r||"d";if(rv==="d")delete data.remind;else data.remind=+rv;const nt=$("#fNotes").value.trim();if(nt)data.notes=nt;else delete data.notes}
     delete data.example;save(type,rec.id||uid(),data);closeSheet();toast(isNew?"Added":"Saved")};
 }
 const strip=r=>{const o={...r};delete o.id;delete o.src;delete o._lane;delete o._lanes;return o};
@@ -186,7 +222,8 @@ const strip=r=>{const o={...r};delete o.id;delete o.src;delete o._lane;delete o.
 document.addEventListener("click",e=>{
   const v=e.target.closest(".tabs button");if(v){location.hash=v.dataset.v;return}
   const tg=e.target.closest("[data-toggle]");if(tg){const t=S.tasks.find(x=>x.id===tg.dataset.toggle);if(t)save("tasks",t.id,{...strip(t),done:!t.done});return}
-  const op=e.target.closest("[data-open]");if(op){const[col,id]=op.dataset.open.split(":");const r=S[col].find(x=>x.id===id);if(r)openSheet(col,r,col==="routines"&&S.view==="day"?{onDate:ymd(S.cur)}:{});return}
+  const op=e.target.closest("[data-open]");if(op){const[col,id,date]=op.dataset.open.split(":");const r=S[col].find(x=>x.id===id);if(!r)return;if(col==="tasks")openSheet(col,r,{});else openDetails(col,r,date||r.date);return}
+  const se=e.target.closest("[data-sel]");if(se){S.sel=se.dataset.sel;renderMonth();return}
   const at=e.target.closest("[data-addtop]");if(at){openSheet("tasks",null,{date:at.dataset.addtop,priority:"top"});return}
   const sl=e.target.closest("[data-slot]");if(sl){openSheet("blocks",null,{start:sl.dataset.slot,date:ymd(S.cur)});return}
   const pl=e.target.closest("[data-plan]");if(pl){const t=S.tasks.find(x=>x.id===pl.dataset.plan);const m=t.mins||60;let d=t.date&&t.date>=todayStr()?t.date:todayStr(),g=firstGap(d,m);if(g===null&&!t.date){for(let i=1;i<8&&g===null;i++){const dd=ymd(addDays(fromYmd(todayStr()),i));if(wd(fromYmd(dd))<=5){g=firstGap(dd,m);if(g!==null)d=dd}}}const st=g??toMin(S.work.start);openSheet("blocks",null,{title:t.title,date:d,start:hm(st),end:hm(Math.min(st+m,23*60+45)),taskId:t.id,kind:"work"});return}
@@ -194,13 +231,14 @@ document.addEventListener("click",e=>{
   if(e.target.closest("[data-settings]")){openSettings();return}
   if(e.target.id==="clearEx"){const b=e.target;if(!b.dataset.armed){b.dataset.armed=1;b.textContent="Tap again to clear";return}["tasks","blocks","routines"].forEach(c=>S[c].filter(x=>x.example).forEach(x=>remove(c,x.id)));toast("Examples cleared")}
 });
-$("#prev").onclick=()=>{S.cur=addDays(S.cur,S.view==="week"?-7:-1);render()};
-$("#next").onclick=()=>{S.cur=addDays(S.cur,S.view==="week"?7:1);render()};
-$("#todayBtn").onclick=()=>{S.cur=new Date();S.cur.setHours(0,0,0,0);renderDay._scrolled=false;render()};
-$("#fab").onclick=()=>{if(S.view==="tasks")openSheet("tasks");else if(S.view==="routines")openSheet("routines");else{const d=ymd(S.cur),g=firstGap(d,60);openSheet("blocks",null,{date:d,start:g!==null?hm(g):S.work.start,end:g!==null?hm(g+60):hm(toMin(S.work.start)+60)})}};
+const step=n=>{if(S.view==="month"){S.cur=new Date(S.cur.getFullYear(),S.cur.getMonth()+n,1);S.sel=null}else S.cur=addDays(S.cur,S.view==="week"?7*n:n);render()};
+$("#prev").onclick=()=>step(-1);
+$("#next").onclick=()=>step(1);
+$("#todayBtn").onclick=()=>{S.cur=new Date();S.cur.setHours(0,0,0,0);S.sel=null;renderDay._scrolled=false;render()};
+$("#fab").onclick=()=>{if(S.view==="tasks")openSheet("tasks");else if(S.view==="routines")openSheet("routines");else{const d=S.view==="month"&&S.sel?S.sel:ymd(S.cur),g=firstGap(d,60);openSheet("blocks",null,{date:d,start:g!==null?hm(g):S.work.start,end:g!==null?hm(g+60):hm(toMin(S.work.start)+60)})}};
 document.addEventListener("submit",e=>{if(e.target.id!=="quick")return;e.preventDefault();const i=$("#quickIn"),t=i.value.trim();if(!t)return;save("tasks",uid(),{title:t,date:null,priority:"normal",mins:null,done:false,createdAt:Date.now()});toast("Added to Inbox");setTimeout(()=>{const n=$("#quickIn");if(n)n.focus()},30)});
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet()});
-function route(){const h=location.hash.slice(1);S.view=["day","week","tasks","routines"].includes(h)?h:"day";closeSheet();render()}
+function route(){const h=location.hash.slice(1);S.view=["day","week","month","tasks","routines"].includes(h)?h:"day";closeSheet();render()}
 addEventListener("hashchange",route);
 setInterval(()=>{if(S.view==="day"&&ymd(S.cur)===todayStr()&&!$("#sheetRoot").innerHTML)renderDay()},60000);
 route();
@@ -249,14 +287,15 @@ async function disableAlerts(){
 }
 function openSettings(){
   let alertHtml;
-  if(isIOS&&!installed)alertHtml=`<p class="hint">To get alerts on an iPhone, add this app to your Home Screen first: tap Share, then <b>Add to Home Screen</b>, and open it from there.</p>`;
-  else if(!pushSupported)alertHtml=`<p class="hint">This browser can't show alerts. Try Chrome, or the Home Screen app on your iPhone.</p>`;
-  else alertHtml=`<div class="acts"><button type="button" class="${S.alertsHere?"ghost":"primary"}" id="sAlerts">${S.alertsHere?"Turn off alerts on this device":"Turn on alerts on this device"}</button>${S.alertsHere?`<button type="button" class="ghost" id="sTest">Send a test</button>`:""}</div>`;
+  if(isIOS&&!installed)alertHtml=`<p class="hint">Alerts work in the Home Screen app.</p>`;
+  else if(!pushSupported)alertHtml=`<p class="hint">This browser can't show alerts.</p>`;
+  else if(S.alertsHere)alertHtml=`<details class="onrow"><summary><span class="on">✓ On</span><span class="mg">Manage</span></summary><div class="acts"><button type="button" class="ghost" id="sTest">Send a test</button><button type="button" class="danger" id="sAlerts">Turn off on this device</button></div></details>`;
+  else alertHtml=`<div class="acts"><button type="button" class="primary" id="sAlerts">Turn on alerts</button></div>`;
   $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="Settings"><form class="in" id="sForm"><h3>Settings</h3>
   <div class="two"><div class="f"><label for="sStart">Work day starts</label><input id="sStart" type="time" step="900" value="${S.work.start}"></div><div class="f"><label for="sEnd">Work day ends</label><input id="sEnd" type="time" step="900" value="${S.work.end}"></div></div>
-  <div class="f"><span class="lb">Alert me before each block</span><div class="opts" id="sLead">${[5,10,15,30].map(n=>`<button type="button" data-n="${n}" aria-pressed="${S.lead===n}">${n} min</button>`).join("")}</div></div>
-  <div class="f"><span class="lb">Phone alerts</span>${alertHtml}<p class="hint">${S.devices?`Alerts are on for ${S.devices} device${S.devices>1?"s":""}.`:"No devices get alerts yet."}</p></div>
-  <div class="f"><span class="lb">Claude connector</span>${S.connector?`<p class="hint">Add this link in Claude under Settings → Connectors → Add custom connector. Anyone with the link can change your planner, so keep it private.</p><div class="quick" style="margin:0"><input id="sConn" readonly value="${esc(S.connector)}" aria-label="Connector link"><button type="button" id="sCopy">Copy</button></div><div class="acts"><button type="button" class="ghost" id="sNewKey">Make a new link</button><button type="button" class="danger" id="sRevoke">Turn off</button></div>`:`<p class="hint">Let Claude read and update your planner from chat.</p><div class="acts"><button type="button" class="ghost" id="sNewKey">Create Claude link</button></div>`}</div>
+  <div class="f"><span class="lb">Default reminder</span><div class="opts" id="sLead">${[5,10,15,30].map(n=>`<button type="button" data-n="${n}" aria-pressed="${S.lead===n}">${n} min</button>`).join("")}</div></div>
+  <div class="f"><span class="lb">Phone alerts</span>${alertHtml}</div>
+  <div class="f"><span class="lb">Claude connector</span>${S.connector?`<details class="onrow"><summary><span class="on">✓ Connected</span><span class="mg">Manage</span></summary><p class="hint">Keep this link private.</p><div class="quick" style="margin:0"><input id="sConn" readonly value="${esc(S.connector)}" aria-label="Connector link"><button type="button" id="sCopy">Copy</button></div><div class="acts"><button type="button" class="ghost" id="sNewKey">Make a new link</button><button type="button" class="danger" id="sRevoke">Turn off</button></div></details>`:`<div class="acts"><button type="button" class="ghost" id="sNewKey">Create Claude link</button></div>`}</div>
   <div class="err" id="sErr"></div>
   <div class="acts"><button class="primary" type="submit">Save</button><button type="button" class="ghost" id="sCancel">Cancel</button><button type="button" class="danger" id="sOut">Log out</button></div></form></div>`;
   const err=$("#sErr");
@@ -264,7 +303,7 @@ function openSettings(){
   $("#sLead").onclick=e=>{const b=e.target.closest("button");if(!b)return;$("#sLead").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")};
   const al=$("#sAlerts");if(al)al.onclick=async()=>{al.disabled=true;err.textContent="";try{S.alertsHere?await disableAlerts():await enableAlerts();toast(S.alertsHere?"Alerts are on":"Alerts are off");openSettings()}catch(e){err.textContent=e.message;al.disabled=false}};
   const te=$("#sTest");if(te)te.onclick=async()=>{te.disabled=true;try{await pushApi({action:"test"});toast("Test sent. It should arrive in a few seconds.")}catch(e){err.textContent=e.message}te.disabled=false};
-  const conn=async action=>{err.textContent="";const r=await fetch("/api/connector",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action})});const j=await r.json().catch(()=>({}));if(!r.ok){err.textContent=j.error||"That didn't work. Try again.";return}S.connector=j.url;openSettings();toast(action==="revoke"?"Claude link turned off":"New Claude link ready")};
+  const conn=async action=>{err.textContent="";const r=await fetch("/api/connector",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action})});const j=await r.json().catch(()=>({}));if(!r.ok){err.textContent=j.error||"That didn't work. Try again.";return}S.connector=j.url;openSettings();toast(action==="revoke"?"Claude link turned off":"New Claude link ready");if(action==="create"){const dt=document.querySelectorAll(".onrow");dt[dt.length-1]?.setAttribute("open","")}};
   const nk=$("#sNewKey");if(nk)nk.onclick=()=>{if(S.connector&&!nk.dataset.armed){nk.dataset.armed=1;nk.textContent="Tap again: the old link stops working";return}conn("create")};
   const rv=$("#sRevoke");if(rv)rv.onclick=()=>{if(!rv.dataset.armed){rv.dataset.armed=1;rv.textContent="Tap again to turn off";return}conn("revoke")};
   const cp=$("#sCopy");if(cp)cp.onclick=()=>{const i=$("#sConn");const done=()=>toast("Link copied");try{navigator.clipboard.writeText(i.value).then(done,()=>{i.select();document.execCommand("copy");done()})}catch(_){i.select();document.execCommand("copy");done()}};

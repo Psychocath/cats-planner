@@ -140,3 +140,45 @@ img{max-width:100%}
 .login form{width:100%;max-width:360px;display:grid;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:24px}
 .login h1{font-family:var(--f-display);font-size:1.7rem;margin:0}
 .login p{margin:0;color:var(--muted)}
+
+/* month */
+.mgrid{margin-top:14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px}
+.mhead,.mdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
+.mhead span{text-align:center;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:4px 0}
+.mday{border:0;background:transparent;border-radius:10px;min-height:54px;padding:4px 2px;display:grid;justify-items:center;align-content:start;gap:3px;position:relative}
+.mday .num{font-family:var(--f-mono);font-size:.85rem;font-variant-numeric:tabular-nums;width:1.9em;height:1.9em;display:grid;place-items:center;border-radius:50%}
+.mday.out{opacity:.35}
+.mday.today .num{background:var(--accent);color:var(--accent-ink)}
+.mday.sel{background:var(--sunk);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.mday.hol{background:var(--k-me-bg)}
+.mday.hol.sel{background:var(--k-me-bg)}
+.mday .dots{display:flex;gap:2px;flex-wrap:wrap;justify-content:center;max-width:100%}
+.mday .dots i{width:6px;height:6px;border-radius:50%;background:var(--kc)}
+.mday .dots em{font-style:normal;font-size:.6rem;line-height:6px;color:var(--muted)}
+.mday .tc{position:absolute;top:3px;right:3px;font-size:.6rem;font-weight:700;color:var(--muted)}
+.mlist{margin-top:8px}
+.mlh{all:unset;display:flex;align-items:center;gap:10px;justify-content:space-between}
+.mlh h2{margin:18px 0 10px}
+.wd .wi{all:unset;box-sizing:border-box;display:flex;gap:10px;align-items:baseline;font-size:.92rem;cursor:pointer;padding:6px 4px;border-radius:8px;width:100%}
+.wd .wi:hover,.wd .wi:focus-visible{background:var(--sunk)}
+.wd .wi:focus-visible{outline:2px solid var(--accent)}
+.strike{text-decoration:line-through;color:var(--muted)}
+/* details */
+.dhead{display:grid;gap:6px}
+.dhead .chip{justify-self:start}
+.dhead h3{font-size:1.45rem;line-height:1.2;text-wrap:balance}
+.dl{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:0}
+.dl dt{font-size:.75rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:2px}
+.dl dd{margin:0;min-width:0;overflow-wrap:anywhere}
+textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;box-sizing:border-box;resize:vertical}
+.tabs .in{grid-template-columns:repeat(5,1fr)}
+.tabs button{font-size:.72rem}
+
+.onrow{border:1px solid var(--line);border-radius:12px;background:var(--bg)}
+.onrow summary{list-style:none;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;cursor:pointer;margin:0;color:var(--ink)}
+.onrow summary::-webkit-details-marker{display:none}
+.onrow .on{font-weight:700;color:var(--k-me)}
+.onrow .mg{font-size:.85rem;color:var(--muted)}
+.onrow[open] summary .mg{color:var(--accent)}
+.onrow > :not(summary){margin:0 14px 12px}
+.wi .tm{white-space:nowrap;width:auto;min-width:7.4em}

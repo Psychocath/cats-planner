@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadData, updateData } from "@/lib/store";
-import { itemsFor, localNow, toMin } from "@/lib/schedule";
+import { itemsFor, localNow, shiftDate, toMin } from "@/lib/schedule";
 import { sendToAll } from "@/lib/push";
 import { safeEqual } from "@/lib/auth";
 
@@ -24,24 +24,33 @@ export async function GET(req: Request) {
 
   const now = localNow();
   const lead = data.settings.leadMin ?? 10;
-  // Anything starting from now up to the lead time plus the 5-minute gap between checks.
-  const due = itemsFor(data, now.date, now.wd).filter((i) => {
-    const s = toMin(i.start);
-    return s >= now.minute && s <= now.minute + lead + 5 && !data.sent[i.key];
+  // Each item alerts at its own reminder (or the default). Look at today and tomorrow so
+  // "1 day before" works, and send anything whose alert time fell in the last 10 minutes
+  // or lands in the next 2, since the scheduler only calls every 5 minutes.
+  const tomorrow = shiftDate(now.date, 1);
+  const candidates = [
+    ...itemsFor(data, now.date, now.wd).map((i) => ({ i, offset: 0 })),
+    ...itemsFor(data, tomorrow.date, tomorrow.wd).map((i) => ({ i, offset: 1440 })),
+  ];
+  const due = candidates.filter(({ i, offset }) => {
+    const remind = i.remind ?? lead;
+    if (remind < 0 || data.sent[i.key]) return false;
+    const alertAt = offset + toMin(i.start) - remind;
+    return alertAt <= now.minute + 2 && alertAt > now.minute - 10;
   });
   if (!due.length) return NextResponse.json({ ok: true, due: 0 });
 
   const dead = new Set<string>();
-  for (const i of due) {
-    const mins = toMin(i.start) - now.minute;
-    const when = mins <= 0 ? "Starting now" : `In ${mins} min`;
+  for (const { i, offset } of due) {
+    const mins = offset + toMin(i.start) - now.minute;
+    const when = mins <= 0 ? "Starting now" : mins >= 1440 ? "Tomorrow" : mins >= 60 ? `In ${Math.floor(mins / 60)} h${mins % 60 ? ` ${mins % 60} min` : ""}` : `In ${mins} min`;
     const r = await sendToAll(data.subs, { title: i.title, body: `${when} · ${i.start}–${i.end}`, tag: i.key }, data);
     r.dead.forEach((e) => dead.add(e));
   }
 
   const weekAgo = Date.now() - 7 * 864e5;
   await updateData((d) => {
-    due.forEach((i) => (d.sent[i.key] = Date.now()));
+    due.forEach(({ i }) => (d.sent[i.key] = Date.now()));
     for (const k of Object.keys(d.sent)) if (d.sent[k] < weekAgo) delete d.sent[k];
     if (dead.size) d.subs = d.subs.filter((s) => !dead.has(s.endpoint));
   });
