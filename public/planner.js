@@ -7,6 +7,9 @@ const S={work:{start:"09:00",end:"16:00"},view:"day",cur:new Date(),tasks:[],blo
 S.cur.setHours(0,0,0,0);
 
 const $=s=>document.querySelector(s);
+const PALS=[["calm","Calm",["#3B8C7A","#5A9BD5","#C0607A","#A0742A"]],["ocean","Ocean",["#2F7FD8","#21B5A5","#C2557E","#B07A1E"]],["blossom","Blossom",["#7B6CE0","#E77FA0","#3E9B86","#B7802F"]],["collective","Cat Collective",["#D946EF","#8B5CF6","#0C0912","#FCD34D"]]];
+function applyPalette(p){p=PALS.some(x=>x[0]===p)?p:"calm";if(p==="collective")document.documentElement.removeAttribute("data-palette");else document.documentElement.setAttribute("data-palette",p);try{localStorage.setItem("palette",p)}catch(_){};const m=document.querySelector('meta[name="theme-color"]');S.palette=p}
+try{applyPalette(localStorage.getItem("palette")||"calm")}catch(_){applyPalette("calm")}
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad=n=>String(n).padStart(2,"0");
 const ymd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
@@ -53,7 +56,7 @@ function renderHeader(){
   document.querySelectorAll(".tabs button").forEach(b=>b.setAttribute("aria-current",b.dataset.v===S.view?"page":"false"));
   const c=S.cur,isToday=ymd(c)===todayStr();
   let sub="",main="";
-  if(S.view==="home"){sub="The Cat Collective";main="Cat's Planner"}
+  if(S.view==="home"){sub=fmt(new Date(),{weekday:"long"});main="Cat's Planner"}
   else if(S.view==="day"){const t=new Date();t.setHours(0,0,0,0);const diff=Math.round((c-t)/864e5);sub=diff===0?"Today":diff===1?"Tomorrow":diff===-1?"Yesterday":DAYL[wd(c)-1];main=fmt(c,{weekday:"short",day:1,month:"short"})}
   else if(S.view==="week"){const m=addDays(c,1-wd(c)),s=addDays(m,6);sub="Week";main=fmt(m,{day:1,month:"short"})+" to "+fmt(s,{day:1,month:"short"})}
   else if(S.view==="month"){sub=String(c.getFullYear());main=MONL[c.getMonth()]}
@@ -65,12 +68,39 @@ function renderHeader(){
   $("#fab").textContent={home:"+ Block",day:"+ Block",week:"+ Block",month:"+ Block",tasks:"+ Task",routines:"+ Routine"}[S.view];
 }
 
+/* ---------- line icons (stroke, currentColor) ---------- */
+const IC={
+ work:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
+ family:'<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.5A5 5 0 0 1 21 20"/>',
+ admin:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>',
+ me:'<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
+ task:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',
+ focus:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/>',
+ repeat:'<path d="M4 12a8 8 0 0 1 14-5.3L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-14 5.3L4 15"/><path d="M4 20v-5h5"/>',
+ clock:'<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+ cal:'<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+ bell:'<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+ note:'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+ buffer:'<path d="M6 3h12M6 21h12M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9"/>',
+ star:'<path d="M12 4l2.4 5 5.6.8-4 3.9.9 5.5L12 16.6 7.1 19.2l.9-5.5-4-3.9 5.6-.8z"/>',
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+ cloud:'<path d="M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 11a3.5 3.5 0 0 0 1 7z"/>',
+ rain:'<path d="M7 15h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 8a3.5 3.5 0 0 0 1 7z"/><path d="M9 18l-1 3M13 18l-1 3M17 18l-1 3"/>',
+ storm:'<path d="M7 15h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 8a3.5 3.5 0 0 0 1 7z"/><path d="M12 15l-2 4h3l-2 4"/>',
+ fog:'<path d="M4 9h16M3 13h18M5 17h14"/>',
+ list:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>',
+ steps:'<path d="M4 6h3M4 12h3M4 18h3M10 6h10M10 12h10M10 18h10"/>',
+};
+const ic=(n,c="")=>`<svg class="ic ${c}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]||""}</svg>`;
+const wxIcon=c=>c===0||c===1?"sun":c===2||c===3?"cloud":c===45||c===48?"fog":c>=95?"storm":c>=51?"rain":"cloud";
+
 /* ---------- shared day list: one-offs in full, routines as one compact strip ---------- */
 function dayList(ds,its,tasks){
   const one=its.filter(i=>i.src!=="routines"),rt=its.filter(i=>i.src==="routines");
-  let h=one.map(it=>`<button class="wi k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}"><span class="tm">${it.start}–${it.end}</span><span class="dot"></span><span class="tt">${esc(it.title)}</span></button>`).join("");
-  h+=(tasks||[]).map(t=>`<button class="wi" data-open="tasks:${t.id}"><span class="tm">${t.priority==="top"?"★ Top":"Task"}</span><span class="dot" style="background:var(--muted)"></span><span class="tt ${t.done?"strike":""}">${esc(t.title)}</span></button>`).join("");
-  if(rt.length)h+=`<div class="rstrip">${rt.map(it=>`<button class="rchip k-${it.kind||"work"}" data-open="routines:${it.id}:${ds}"><span>${it.start}</span>${esc(it.title)}</button>`).join("")}</div>`;
+  let h=one.map(it=>`<button class="wi k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}"><span class="tm">${it.start}–${it.end}</span>${ic(it.kind||"work","ki")}<span class="tt">${esc(it.title)}</span></button>`).join("");
+  h+=(tasks||[]).map(t=>`<button class="wi" data-open="tasks:${t.id}"><span class="tm">${t.priority==="top"?"Top 3":"Task"}</span>${ic(t.priority==="top"?"star":"task","ki mt")}<span class="tt ${t.done?"strike":""}">${esc(t.title)}</span></button>`).join("");
+  if(rt.length)h+=`<div class="rstrip">${rt.map(it=>`<button class="rchip k-${it.kind||"work"}" data-open="routines:${it.id}:${ds}">${ic("repeat")}<span>${it.start}</span>${esc(it.title)}</button>`).join("")}</div>`;
   return h||`<div class="wi"><span class="tt" style="color:var(--muted)">Nothing planned</span></div>`;
 }
 
@@ -100,17 +130,17 @@ function renderHome(){
   let wx;
   if(!S.wx)wx=`<div class="wx"><span class="lb">Cape Town</span><b class="free">Loading weather</b></div>`;
   else if(S.wx.err)wx=`<div class="wx"><span class="lb">Cape Town</span><b class="free">Weather unavailable</b></div>`;
-  else wx=`<div class="wx"><span class="lb">Cape Town</span><div class="wxt"><b>${S.wx.t}°</b><span>${WX[S.wx.code]||"—"}</span></div><div class="wxm">H ${S.wx.hi}° · L ${S.wx.lo}° · Rain ${S.wx.rain??0}% · Wind ${S.wx.wind} km/h</div></div>`;
+  else wx=`<div class="wx"><span class="lb">Cape Town</span><div class="wxt">${ic(wxIcon(S.wx.code),"wxi")}<b>${S.wx.t}°</b><span>${WX[S.wx.code]||"—"}</span></div><div class="wxm">H ${S.wx.hi}° · L ${S.wx.lo}° · Rain ${S.wx.rain??0}% · Wind ${S.wx.wind} km/h</div></div>`;
   let h=`<section class="hero"><div class="clk"><span class="lb">${greet(n.getHours())}, Cat</span><b id="hClock">${pad(n.getHours())}:${pad(n.getMinutes())}</b><span class="hd">${fmt(n,{weekday:"long",day:1,month:"long"})}</span></div>${wx}</section>`;
   if(wpct!==null)h+=`<div class="dayp"><div class="dpl"><span>Work day</span><span>${m<ws?"Starts "+S.work.start:m>=we?"Finished":inFmt(we-m)+" left"}</span></div><div class="bar"><span style="width:${wpct}%"></span></div></div>`;
-  h+=`<div class="qa"><button data-qa="block">+ Block</button><button data-qa="task">+ Task</button><button data-qa="focus">Focus</button><button data-qa="routines">Routines</button></div>`;
+  h+=`<div class="qa"><button data-qa="block">${ic("plus")}Block</button><button data-qa="task">${ic("task")}Task</button><button data-qa="focus">${ic("focus")}Focus</button><button data-qa="routines">${ic("repeat")}Routines</button></div>`;
   h+=nowNext(ds);
-  h+=`<div class="hgrid"><section class="hcard" data-v-go="day"><span class="lb">Today</span><b>${left}</b><small>${left===1?"item":"items"} still to come</small></section><section class="hcard" data-v-go="day"><span class="lb">Free in work day</span><b>${wd(n)<=5?inFmt(fw)||"0 min":"Day off"}</b><small>${wd(n)<=5?"after blocks and buffers":"Weekend"}</small></section></div>`;
-  h+=`<div class="t3h"><h2>Top 3</h2>${top.length?`<span class="cnt ${nDone===top.length?"all":""}">${nDone===top.length?"✓ ":""}${nDone} of ${top.length} done</span>`:""}</div><div class="top3">${top.map((t,i)=>`<div class="t3 ${t.done?"done":""}"><span class="n">${i+1}</span><button class="tt t3b" data-open="tasks:${t.id}">${esc(t.title)}</button><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button></div>`).join("")}${top.length<3?`<button class="addline" data-addtop="${ds}">+ Top task</button>`:""}</div>`;
+  h+=`<div class="hgrid"><section class="hcard" data-v-go="day"><span class="lb">${ic("cal")}Today</span><b>${left}</b><small>${left===1?"item":"items"} still to come</small></section><section class="hcard" data-v-go="day"><span class="lb">${ic("clock")}Free in work day</span><b>${wd(n)<=5?inFmt(fw)||"0 min":"Day off"}</b><small>${wd(n)<=5?"after blocks and buffers":"Weekend"}</small></section></div>`;
+  h+=`<div class="t3h"><h2>${ic("star","h")}Top 3</h2>${top.length?`<span class="cnt ${nDone===top.length?"all":""}">${nDone===top.length?"✓ ":""}${nDone} of ${top.length} done</span>`:""}</div><div class="top3">${top.map((t,i)=>`<div class="t3 ${t.done?"done":""}"><span class="n">${i+1}</span><button class="tt t3b" data-open="tasks:${t.id}">${esc(t.title)}</button><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button></div>`).join("")}${top.length<3?`<button class="addline" data-addtop="${ds}">+ Top task</button>`:""}</div>`;
   const tm=addDays(n,1),tds=ymd(tm),tIts=itemsFor(tds),tTasks=S.tasks.filter(t=>t.date===tds&&!t.done);
-  h+=`<div class="t3h"><h2>Tomorrow</h2><button class="ghost sm" data-goday="${tds}">${fmt(tm,{weekday:"short",day:1,month:"short"})}</button></div>`+(tIts.length||tTasks.length?`<div class="week"><section class="wd">${dayList(tds,tIts,tTasks)}</section></div>`:`<div class="empty">Nothing planned</div>`);
+  h+=`<div class="t3h"><h2>${ic("cal","h")}Tomorrow</h2><button class="ghost sm" data-goday="${tds}">${fmt(tm,{weekday:"short",day:1,month:"short"})}</button></div>`+(tIts.length||tTasks.length?`<div class="week"><section class="wd">${dayList(tds,tIts,tTasks)}</section></div>`:`<div class="empty">Nothing planned</div>`);
   const al=upcomingAlerts(ds);
-  h+=`<h2>Reminders</h2>`+(al.length?`<div class="week"><section class="wd">${al.map(a=>`<button class="wi k-${a.it.kind||"work"}" data-open="${a.it.src}:${a.it.id}:${ds}"><span class="tm">${hm(a.at)}</span><span class="dot"></span><span class="tt">${esc(a.it.title)} <span class="mut">· ${a.r===0?"at start":inFmt(a.r)+" before"}</span></span></button>`).join("")}</section></div>`:`<div class="empty">No more reminders today</div>`)+(S.alertsHere?"":`<p class="mut small">Phone alerts are off on this device.</p>`);
+  h+=`<h2>${ic("bell","h")}Reminders</h2>`+(al.length?`<div class="week"><section class="wd">${al.map(a=>`<button class="wi k-${a.it.kind||"work"}" data-open="${a.it.src}:${a.it.id}:${ds}"><span class="tm">${hm(a.at)}</span><span class="dot"></span><span class="tt">${esc(a.it.title)} <span class="mut">· ${a.r===0?"at start":inFmt(a.r)+" before"}</span></span></button>`).join("")}</section></div>`:`<div class="empty">No more reminders today</div>`)+(S.alertsHere?"":`<p class="mut small">Phone alerts are off on this device.</p>`);
   $("#view").innerHTML=h;
   loadWeather();
 }
@@ -126,7 +156,7 @@ function nowNext(ds){
   const n=new Date(),m=n.getHours()*60+n.getMinutes(),its=itemsFor(ds);
   const cur=its.filter(i=>toMin(i.start)<=m&&toMin(i.end)>m).pop(),nxt=its.find(i=>toMin(i.start)>m);
   const card=(lab,it,empty)=>{if(!it)return null;const s0=toMin(it.start),e0=toMin(it.end),pct=Math.max(0,Math.min(100,Math.round((m-s0)/(e0-s0)*100)));
-    return `<div class="k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}" style="cursor:pointer"><span class="label">${lab}</span><div class="when">${it.start}–${it.end}${lab==="Next"?" · in "+inFmt(s0-m):""}</div><b>${esc(it.title)}</b>${lab==="Now"?`<div class="left"><div class="bar"><span style="width:${pct}%"></span></div><span class="lt">${inFmt(e0-m)} left</span></div><button class="fbtn" data-focus="${it.src}:${it.id}:${ds}" type="button">Focus</button>`:""}</div>`};
+    return `<div class="k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}" style="cursor:pointer"><span class="label">${ic(lab==="Now"?"clock":"bell")}${lab}</span><div class="when">${it.start}–${it.end}${lab==="Next"?" · in "+inFmt(s0-m):""}</div><b>${esc(it.title)}</b>${lab==="Now"?`<div class="left"><div class="bar"><span style="width:${pct}%"></span></div><span class="lt">${inFmt(e0-m)} left</span></div><button class="fbtn" data-focus="${it.src}:${it.id}:${ds}" type="button">${ic("focus")}Focus</button>`:""}</div>`};
   const card0=(lab,it,empty)=>card(lab,it)||`<div><span class="label">${lab}</span><b class="free">${empty}</b></div>`;
   return `<div class="nn">${card0("Now",cur,"Free time")}${card0("Next",nxt,"Nothing else today")}</div>`;
 }
@@ -161,7 +191,7 @@ function renderDay(){
   {const ws=toMin(S.work.start),we=toMin(S.work.end);if(ws>sH*60)grid+=`<div class="off" style="top:0;height:${y(ws)}px"></div>`;if(we<eH*60)grid+=`<div class="off" style="top:${y(we)}px;height:${y(eH*60)-y(we)}px"></div>`;if(wd(S.cur)<=5)grid+=`<span class="wl" style="top:${y(ws)}px">Work day starts</span><span class="wl" style="top:${y(we)}px">Work day ends</span>`}
   items.forEach(it=>{if(!it.buffer)return;const bs=toMin(it.end),be=Math.min(bs+it.buffer,eH*60);if(be>bs)grid+=`<div class="buf" style="top:${y(bs)+1}px;height:${(be-bs)*ppm-2}px"><span>Buffer ${it.buffer} min</span></div>`});
   items.forEach(it=>{const s=Math.max(toMin(it.start),sH*60),e=Math.min(Math.max(toMin(it.end),s+15),eH*60);if(e<=s)return;const w=100/it._lanes,ht=(e-s)*ppm-2,short=ht<60;
-    const isR=it.src==="routines";grid+=`<button class="blk k-${it.kind||"work"} ${isR?"rt slim":""} ${short||isR?"short":""}" data-open="${it.src}:${it.id}:${ds}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><b>${esc(it.title)}</b><span class="tm">${it.src==="routines"?"↻ ":""}${it.start}${short?"":"–"+it.end}</span></button>`});
+    const isR=it.src==="routines";grid+=`<button class="blk k-${it.kind||"work"} ${isR?"rt slim":""} ${short||isR?"short":""}" data-open="${it.src}:${it.id}:${ds}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><b>${isR?"":ic(it.kind||"work","bi")}${esc(it.title)}</b><span class="tm">${it.src==="routines"?"↻ ":""}${it.start}${short?"":"–"+it.end}</span></button>`});
   if(isToday&&nm>=sH*60&&nm<=eH*60)grid+=`<div class="now" style="top:${y(nm)}px"></div>`;
   const fw=freeWork(ds),need=dayTasks.filter(t=>!t.done&&t.mins&&!S.blocks.some(b=>b.taskId===t.id&&b.date===ds)).reduce((a,t)=>a+Math.round(t.mins*ratio()),0);
   if(wd(S.cur)<=5&&need>fw)h+=`<div class="over"><b>Too much for one day</b><span>Tasks need about ${inFmt(need)}, you have ${fw?inFmt(fw):"no time"} free.</span></div>`;h+=`<h2>Plan</h2><p class="label" style="margin:0 0 6px">${wd(S.cur)<=5?(fw?inFmt(fw)+" free in your work day":"Work day fully booked"):""}</p>`;
@@ -210,7 +240,7 @@ function openDetails(col,rec,date){
   if(rec.notes)rows.push(["Notes",esc(rec.notes).replace(/\n/g,"<br>")]);
   const steps=rec.steps||[],skipped=isR&&date&&(rec.skips||[]).includes(date);
   const stepsHtml=steps.length?`<div class="steps"><div class="sh"><span class="lb">Steps</span><span class="cnt">${steps.filter(x=>x.done).length} of ${steps.length}</span></div>${steps.map((x,i)=>`<label class="step ${x.done?"done":""}"><input type="checkbox" data-step="${i}" ${x.done?"checked":""}><span>${esc(x.text)}</span></label>`).join("")}</div>`:"";
-  $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(rec.title)}"><div class="in"><div class="dhead k-${rec.kind||(isT?"admin":"work")}"><span class="chip">${isT?"Task":(KINDS[rec.kind]||"Work")+(isR?" · repeats":"")}</span><h3 class="${isT&&rec.done?"strike":""}">${esc(rec.title)}</h3></div><dl class="dl">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>${stepsHtml}<div class="acts">${!(isT&&rec.done)?`<button class="primary" id="dFocus" type="button">Focus</button>`:""}<button class="ghost" id="dEdit" type="button">Edit</button>${isT?`<button class="ghost" id="dDone" type="button">${rec.done?"Not done":"Done"}</button>`:""}${isR&&date?`<button class="ghost" id="dSkip" type="button">${skipped?"Bring back this day":"Skip this day"}</button>`:""}<button class="ghost" id="dClose" type="button">Close</button></div></div></div>`;
+  $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(rec.title)}"><div class="in"><div class="dhead k-${rec.kind||(isT?"admin":"work")}"><span class="chip">${ic(isT?"task":(rec.kind||"work"))}${isT?"Task":(KINDS[rec.kind]||"Work")+(isR?" · repeats":"")}</span><h3 class="${isT&&rec.done?"strike":""}">${esc(rec.title)}</h3></div><dl class="dl">${rows.map(([k,v])=>`<dt>${ic({Due:"cal",When:"cal",Time:"clock",Repeats:"repeat",Reminder:"bell",Buffer:"buffer",Notes:"note",Priority:"star"}[k]||"note")}${k}</dt><dd>${v}</dd>`).join("")}</dl>${stepsHtml}<div class="acts">${!(isT&&rec.done)?`<button class="primary" id="dFocus" type="button">${ic("focus")}Focus</button>`:""}<button class="ghost" id="dEdit" type="button">Edit</button>${isT?`<button class="ghost" id="dDone" type="button">${rec.done?"Not done":"Done"}</button>`:""}${isR&&date?`<button class="ghost" id="dSkip" type="button">${skipped?"Bring back this day":"Skip this day"}</button>`:""}<button class="ghost" id="dClose" type="button">Close</button></div></div></div>`;
   $("#scrim").onclick=closeSheet;$("#dClose").onclick=closeSheet;
   $("#dEdit").onclick=()=>openSheet(col,rec,{});
   const fo=$("#dFocus");if(fo)fo.onclick=()=>startFocus(col,rec,date);
@@ -258,7 +288,7 @@ function toggleTask(t){const done=!t.done;save("tasks",t.id,{...strip(t),done});
 /* ---------- tasks ---------- */
 function taskRow(t){const td=todayStr(),due=t.date?(t.date===td?"Today":t.date<td&&!t.done?"Carried over from "+fmt(fromYmd(t.date),{weekday:"short"}):fmt(fromYmd(t.date),{weekday:"short",day:1,month:"short"})):"No date";
   const st=t.steps||[],sd=st.filter(x=>x.done).length,est=t.mins?(t.actual?` · est ${t.mins} min, took ${t.actual}`:` · ${t.mins} min`):(t.actual?` · took ${t.actual} min`:"");
-  return `<div class="row ${t.done?"done":""}"><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button><button class="tt" data-open="tasks:${t.id}"><div>${t.priority==="top"?'<span class="star">★</span> ':""}${esc(t.title)}${t.example?'<span class="ex">Example</span>':""}</div><div class="meta">${due}${est}${st.length?` · ${sd}/${st.length} steps`:""}</div></button>${t.done?"":`<button class="plan" data-plan="${t.id}">Block it</button>`}</div>`}
+  return `<div class="row ${t.done?"done":""}"><button class="check" data-toggle="${t.id}" aria-pressed="${!!t.done}" aria-label="Mark done">${t.done?"✓":""}</button><button class="tt" data-open="tasks:${t.id}"><div>${t.priority==="top"?ic("star","star"):""}${esc(t.title)}${t.example?'<span class="ex">Example</span>':""}</div><div class="meta">${due}${est}${st.length?` · ${sd}/${st.length} steps`:""}</div></button>${t.done?"":`<button class="plan" data-plan="${t.id}">Block it</button>`}</div>`}
 function renderTasks(){
   const td=todayStr(),open=S.tasks.filter(t=>!t.done),done=S.tasks.filter(t=>t.done);
   const byP=(a,b)=>(a.priority==="top"?0:1)-(b.priority==="top"?0:1)||(a.date||"9").localeCompare(b.date||"9");
@@ -359,7 +389,7 @@ async function load(){
     if(!r.ok)throw new Error();
     const d=await r.json();
     S.tasks=d.tasks;S.blocks=d.blocks;S.routines=d.routines;
-    S.work={start:d.settings.workStart,end:d.settings.workEnd};S.lead=d.settings.leadMin;S.morning=d.settings.morning||null;
+    S.work={start:d.settings.workStart,end:d.settings.workEnd};S.lead=d.settings.leadMin;S.morning=d.settings.morning||null;if(d.settings.palette&&d.settings.palette!==S.palette)applyPalette(d.settings.palette);
     S.publicKey=d.alerts.publicKey;S.devices=d.alerts.devices;S.connector=d.connectorUrl;
     status("");
     if(!$("#sheetRoot").innerHTML&&document.activeElement?.id!=="quickIn")render();
@@ -404,6 +434,7 @@ function openSettings(){
   else if(S.alertsHere)alertHtml=`<details class="onrow"><summary><span class="on">✓ On</span><span class="mg">Manage</span></summary><div class="acts"><button type="button" class="ghost" id="sTest">Send a test</button><button type="button" class="danger" id="sAlerts">Turn off on this device</button></div></details>`;
   else alertHtml=`<div class="acts"><button type="button" class="primary" id="sAlerts">Turn on alerts</button></div>`;
   $("#sheetRoot").innerHTML=`<div class="scrim" id="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="Settings"><form class="in" id="sForm"><h3>Settings</h3>
+  <div class="f"><span class="lb">Colours</span><div class="pal" id="sPal">${PALS.map(([k,l,c])=>`<button type="button" data-p="${k}" aria-pressed="${S.palette===k}"><span class="sw">${c.map(x=>`<i style="background:${x}"></i>`).join("")}</span>${l}</button>`).join("")}</div></div>
   <div class="two"><div class="f"><label for="sStart">Work day starts</label><input id="sStart" type="time" step="900" value="${S.work.start}"></div><div class="f"><label for="sEnd">Work day ends</label><input id="sEnd" type="time" step="900" value="${S.work.end}"></div></div>
   <div class="f"><span class="lb">Default reminder</span><div class="opts" id="sLead">${[5,10,15,30].map(n=>`<button type="button" data-n="${n}" aria-pressed="${S.lead===n}">${n} min</button>`).join("")}</div></div>
   <div class="f"><span class="lb">Morning planning alert</span><div class="opts" id="sMorn">${["off","07:00","07:30","08:00","08:30"].map(v=>`<button type="button" data-m="${v}" aria-pressed="${(S.morning||"off")===v}">${v==="off"?"Off":v}</button>`).join("")}</div></div>
@@ -413,6 +444,7 @@ function openSettings(){
   <div class="acts"><button class="primary" type="submit">Save</button><button type="button" class="ghost" id="sCancel">Cancel</button><button type="button" class="danger" id="sOut">Log out</button></div></form></div>`;
   const err=$("#sErr");
   $("#scrim").onclick=closeSheet;$("#sCancel").onclick=closeSheet;
+  $("#sPal").onclick=e=>{const b=e.target.closest("button");if(!b)return;applyPalette(b.dataset.p);$("#sPal").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));render()};
   $("#sMorn").onclick=e=>{const b=e.target.closest("button");if(!b)return;$("#sMorn").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")};
   $("#sLead").onclick=e=>{const b=e.target.closest("button");if(!b)return;$("#sLead").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")};
   const al=$("#sAlerts");if(al)al.onclick=async()=>{al.disabled=true;err.textContent="";try{S.alertsHere?await disableAlerts():await enableAlerts();toast(S.alertsHere?"Alerts are on":"Alerts are off");openSettings()}catch(e){err.textContent=e.message;al.disabled=false}};
@@ -424,7 +456,7 @@ function openSettings(){
   $("#sOut").onclick=async()=>{await fetch("/api/logout",{method:"POST"});location.href="/login"};
   $("#sForm").onsubmit=async e=>{e.preventDefault();const st=$("#sStart").value,en=$("#sEnd").value,lead=+($("#sLead [aria-pressed=\"true\"]")?.dataset.n||10),morn=$("#sMorn [aria-pressed=\"true\"]")?.dataset.m||"off";
     if(!st||!en||toMin(en)<=toMin(st)){err.textContent="The work day needs to end after it starts.";return}
-    try{const j=await api({op:"settings",data:{workStart:st,workEnd:en,leadMin:lead,morning:morn}});S.work={start:j.settings.workStart,end:j.settings.workEnd};S.lead=j.settings.leadMin;S.morning=j.settings.morning||null;closeSheet();render();toast("Saved")}catch(e){err.textContent=e.message}};
+    try{const j=await api({op:"settings",data:{workStart:st,workEnd:en,leadMin:lead,morning:morn,palette:S.palette}});S.work={start:j.settings.workStart,end:j.settings.workEnd};S.lead=j.settings.leadMin;S.morning=j.settings.morning||null;closeSheet();render();toast("Saved")}catch(e){err.textContent=e.message}};
 }
 $("#gear").onclick=openSettings;
 
