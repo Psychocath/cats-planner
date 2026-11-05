@@ -117,9 +117,10 @@ async function loadWeather(force){
   if(S.view==="home"&&!$("#sheetRoot").innerHTML)renderHome();
 }
 function upcomingAlerts(ds){
-  const n=new Date(),m=n.getHours()*60+n.getMinutes(),out=[];
-  itemsFor(ds).forEach(it=>{[it.remind??S.lead,it.remind2].forEach(r=>{if(typeof r!=="number"||r<0)return;const at=toMin(it.start)-r;if(at>=m&&at<24*60)out.push({at,it,r})})});
-  return out.sort((a,b)=>a.at-b.at).slice(0,4);
+  // Alerts that fire later today, including advance ones for events on later days.
+  const n=new Date(),m=n.getHours()*60+n.getMinutes(),out=[],base=fromYmd(ds);
+  for(let d=0;d<8;d++){const day=ymd(addDays(base,d));itemsFor(day).forEach(it=>{[it.remind??S.lead,it.remind2].forEach(r=>{if(typeof r!=="number"||r<0)return;const at=d*1440+toMin(it.start)-r;if(at>=m&&at<24*60)out.push({at,it,r,day,d})})})}
+  return out.sort((a,b)=>a.at-b.at).slice(0,5);
 }
 function greet(h){return h<12?"Good morning":h<17?"Good afternoon":"Good evening"}
 function renderHome(){
@@ -140,7 +141,7 @@ function renderHome(){
   const tm=addDays(n,1),tds=ymd(tm),tIts=itemsFor(tds),tTasks=S.tasks.filter(t=>t.date===tds&&!t.done);
   h+=`<div class="t3h"><h2>${ic("cal","h")}Tomorrow</h2><button class="ghost sm" data-goday="${tds}">${fmt(tm,{weekday:"short",day:1,month:"short"})}</button></div>`+(tIts.length||tTasks.length?`<div class="week"><section class="wd">${dayList(tds,tIts,tTasks)}</section></div>`:`<div class="empty">Nothing planned</div>`);
   const al=upcomingAlerts(ds);
-  h+=`<h2>${ic("bell","h")}Reminders</h2>`+(al.length?`<div class="week"><section class="wd">${al.map(a=>`<button class="wi k-${a.it.kind||"work"}" data-open="${a.it.src}:${a.it.id}:${ds}"><span class="tm">${hm(a.at)}</span><span class="dot"></span><span class="tt">${esc(a.it.title)} <span class="mut">· ${a.r===0?"at start":inFmt(a.r)+" before"}</span></span></button>`).join("")}</section></div>`:`<div class="empty">No more reminders today</div>`)+(S.alertsHere?"":`<p class="mut small">Phone alerts are off on this device.</p>`);
+  h+=`<h2>${ic("bell","h")}Reminders</h2>`+(al.length?`<div class="week"><section class="wd">${al.map(a=>`<button class="wi k-${a.it.kind||"work"}" data-open="${a.it.src}:${a.it.id}:${a.day}"><span class="tm">${hm(a.at)}</span><span class="dot"></span><span class="tt">${esc(a.it.title)} <span class="mut">· ${a.d?`due ${a.d===1?"tomorrow":fmt(fromYmd(a.day),{weekday:"short",day:1,month:"short"})} at ${a.it.start}`:(a.r===0?"at start":inFmt(a.r)+" before")}</span></span></button>`).join("")}</section></div>`:`<div class="empty">No more reminders today</div>`)+(S.alertsHere?"":`<p class="mut small">Phone alerts are off on this device.</p>`);
   $("#view").innerHTML=h;
   loadWeather();
 }
@@ -216,7 +217,7 @@ function renderMonth(){
   if(!S.sel||fromYmd(S.sel).getMonth()!==first.getMonth())S.sel=ymd(S.cur);
   let h=`<div class="mgrid" role="grid"><div class="mhead">${DAYN.map(d=>`<span>${d.slice(0,2)}</span>`).join("")}</div><div class="mdays">`;
   for(let i=0;i<42;i++){const d=addDays(start,i),ds=ymd(d);if(i>=35&&d.getMonth()!==first.getMonth())break;
-    const its=itemsFor(ds),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length,out=d.getMonth()!==first.getMonth();
+    const its=itemsFor(ds).filter(x=>x.src!=="routines"),tc=S.tasks.filter(t=>t.date===ds&&!t.done).length,out=d.getMonth()!==first.getMonth();
     const hol=its.find(x=>/^Public holiday/i.test(x.title));
     h+=`<button class="mday ${out?"out":""} ${ds===td?"today":""} ${ds===S.sel?"sel":""} ${hol?"hol":""}" data-sel="${ds}" aria-label="${fmt(d,{weekday:"long",day:1,month:"long"})}, ${its.length} items"><span class="num">${d.getDate()}</span><span class="dots">${its.slice(0,4).map(x=>`<i class="k-${x.kind||"work"}"></i>`).join("")}${its.length>4?"<em>+</em>":""}</span>${tc?`<span class="tc">${tc}</span>`:""}</button>`}
   h+=`</div></div>`;

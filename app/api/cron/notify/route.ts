@@ -37,21 +37,21 @@ export async function GET(req: Request) {
   // Each item alerts at its own reminder (or the default). Look at today and tomorrow so
   // "1 day before" works, and send anything whose alert time fell in the last 10 minutes
   // or lands in the next 2, since the scheduler only calls every 5 minutes.
-  const tomorrow = shiftDate(now.date, 1);
-  const candidates = [
-    ...itemsFor(data, now.date, now.wd).map((i) => ({ i, offset: 0 })),
-    ...itemsFor(data, tomorrow.date, tomorrow.wd).map((i) => ({ i, offset: 1440 })),
-  ];
+  // Look 8 days ahead so "1 day" and "2 days before" style reminders fire on time.
+  const candidates = Array.from({ length: 8 }, (_, d) => {
+    const day = d ? shiftDate(now.date, d) : { date: now.date, wd: now.wd };
+    return itemsFor(data, day.date, day.wd).map((i) => ({ i, offset: d * 1440, date: day.date, wd: day.wd }));
+  }).flat();
   // Up to 2 alerts per item: its main reminder (or the default) and an optional second one.
-  const due = candidates.flatMap(({ i, offset }) =>
+  const due = candidates.flatMap((c) => { const { i, offset } = c; return (
     [i.remind ?? lead, i.remind2]
-      .map((remind, n) => ({ i, offset, remind, key: n ? `${i.key}|2` : i.key }))
+      .map((remind, n) => ({ i, offset, date: c.date, wd: c.wd, remind, key: n ? `${i.key}|2` : i.key }))
       .filter(({ remind, key }) => {
         if (typeof remind !== "number" || remind < 0 || data.sent[key]) return false;
         const alertAt = offset + toMin(i.start) - remind;
         return alertAt <= now.minute + 2 && alertAt > now.minute - 10;
-      }),
-  );
+      }));
+  });
   // Morning planning nudge: one alert a day at the chosen time, with a short summary.
   const mkey = `morning|${now.date}`;
   const mAt = data.settings.morning ? toMin(data.settings.morning) : -1;
@@ -59,10 +59,22 @@ export async function GET(req: Request) {
   if (!due.length && !morningDue) return NextResponse.json({ ok: true, due: 0 });
 
   const dead = new Set<string>();
-  for (const { i, offset, key } of due) {
+  const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const MONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  for (const { i, offset, date, wd, key } of due) {
     const mins = offset + toMin(i.start) - now.minute;
-    const when = mins <= 0 ? "Starting now" : mins >= 1440 ? "Tomorrow" : mins >= 60 ? `In ${Math.floor(mins / 60)} h${mins % 60 ? ` ${mins % 60} min` : ""}` : `In ${mins} min`;
-    const r = await sendToAll(data.subs, { title: i.title, body: `${when} · ${i.start}–${i.end}`, tag: key }, data);
+    const [, mo, dd] = date.split("-").map(Number);
+    const dayName = `${DAYS[wd - 1]} ${dd} ${MONS[mo - 1]}`;
+    const span = `${i.start}–${i.end}`;
+    let body: string;
+    if (offset === 0) {
+      const inTxt = mins <= 0 ? "Starting now" : mins >= 60 ? `In ${Math.floor(mins / 60)} h${mins % 60 ? ` ${mins % 60} min` : ""}` : `In ${mins} min`;
+      body = `${inTxt} · today ${span}`;
+    } else {
+      const rel = offset === 1440 ? "Tomorrow" : `In ${offset / 1440} days`;
+      body = `Due ${rel}, ${dayName} · ${span}`;
+    }
+    const r = await sendToAll(data.subs, { title: i.title, body, tag: key }, data);
     r.dead.forEach((e) => dead.add(e));
   }
 
