@@ -216,8 +216,9 @@ function renderWeek(){
     h+=`<section class="wd ${ds===todayStr()?"today":""}"><header data-goday="${ds}"><span class="d">${fmt(d,{weekday:"short",day:1,month:"short"})}</span><span class="c">${tc?tc+" task"+(tc>1?"s":"")+" · ":""}${its.length} item${its.length===1?"":"s"}</span></header>`;
     // Week keeps tasks short: open ones first, up to 2, then a "more" link to the day.
     {const all=[...tasksDue(ds).filter(t=>!t.done).sort((a,b)=>(a.priority==="top"?0:1)-(b.priority==="top"?0:1)).map(t=>({t,k:"task"})),...deadlinesFor(ds).filter(t=>!t.done).map(t=>({t,k:"dl"}))],shown=all.slice(0,2),more=all.length-shown.length;
-     h+=dayList(ds,its,shown.filter(x=>x.k==="task").map(x=>x.t),shown.filter(x=>x.k==="dl").map(x=>x.t));
-     if(more)h+=`<button class="wmore" data-goday="${ds}">+ ${more} more task${more>1?"s":""}</button>`}
+     const open=S.wOpen&&S.wOpen[ds],list=open?all:shown;
+     h+=dayList(ds,its,list.filter(x=>x.k==="task").map(x=>x.t),list.filter(x=>x.k==="dl").map(x=>x.t));
+     if(more)h+=`<button class="wmore" data-wmore="${ds}">${open?"Show less":`+ ${more} more task${more>1?"s":""}`}</button>`}
     h+=`</section>`}
   $("#view").innerHTML=h+"</div>";
 }
@@ -377,6 +378,7 @@ document.addEventListener("click",e=>{
   const pl=e.target.closest("[data-plan]");if(pl){const t=S.tasks.find(x=>x.id===pl.dataset.plan);const m=t.mins||60;let d=t.date&&t.date>=todayStr()?t.date:todayStr(),g=firstGap(d,m);if(g===null&&!t.date){for(let i=1;i<8&&g===null;i++){const dd=ymd(addDays(fromYmd(todayStr()),i));if(wd(fromYmd(dd))<=5){g=firstGap(dd,m);if(g!==null)d=dd}}}const st=g??toMin(S.work.start);openSheet("blocks",null,{title:t.title,date:d,start:hm(st),end:hm(Math.min(st+m,23*60+45)),taskId:t.id,kind:"work"});return}
   const qa=e.target.closest("[data-qa]");if(qa){const a=qa.dataset.qa;if(a==="block"){const d=todayStr(),g=firstGap(d,60);openSheet("blocks",null,{date:d,start:g!==null?hm(g):S.work.start,end:g!==null?hm(g+60):hm(toMin(S.work.start)+60)})}else if(a==="task")openSheet("tasks");else if(a==="routines")location.hash="routines";else if(a==="focus"){const ds=todayStr(),n=new Date(),mm=n.getHours()*60+n.getMinutes(),cur=itemsFor(ds).filter(i=>toMin(i.start)<=mm&&toMin(i.end)>mm).pop();if(cur)startFocus(cur.src,S[cur.src].find(x=>x.id===cur.id),ds);else{const t=S.tasks.find(x=>x.priority==="top"&&!x.done&&x.date&&x.date<=ds)||S.tasks.find(x=>!x.done&&x.date===ds);if(t)startFocus("tasks",t,ds);else startFocus("tasks",{id:"_free",title:"Focus session",mins:25},ds)}}return}
   const vg=e.target.closest("[data-v-go]");if(vg){S.cur=new Date();S.cur.setHours(0,0,0,0);location.hash=vg.dataset.vGo;return}
+  const wm=e.target.closest("[data-wmore]");if(wm){S.wOpen=S.wOpen||{};S.wOpen[wm.dataset.wmore]=!S.wOpen[wm.dataset.wmore];renderWeek();return}
   const gd=e.target.closest("[data-goday]");if(gd){S.cur=fromYmd(gd.dataset.goday);location.hash="day";return}
   if(e.target.closest("[data-settings]")){openSettings();return}
   if(e.target.id==="clearEx"){const b=e.target;if(!b.dataset.armed){b.dataset.armed=1;b.textContent="Tap again to clear";return}["tasks","blocks","routines"].forEach(c=>S[c].filter(x=>x.example).forEach(x=>remove(c,x.id)));toast("Examples cleared")}
