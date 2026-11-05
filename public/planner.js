@@ -351,14 +351,19 @@ function layoutLanes(items){
   if(cluster.length)flush();return out;
 }
 /* Time scale for the Day timeline. Normally 1.4px a minute, but any block
-   shorter than MIN px gets its minutes stretched so its title fits, and the
-   rest of the day shifts down instead of the blocks sitting on top of each other. */
-function stretchScale(from,to,ppm,spans,MIN=40){
+   shorter than MIN px gets its minutes stretched so its title fits, short free
+   gaps between blocks get GAP px so they stay visible, and the rest of the day
+   shifts down instead of the blocks sitting on top of each other. */
+function stretchScale(from,to,ppm,spans,MIN=44,GAP=22){
   const pts=[...new Set([from,to,...spans.flat()])].filter(m=>m>=from&&m<=to).sort((a,b)=>a-b);
   const seg=pts.slice(1).map((m,i)=>(m-pts[i])*ppm);
   spans.forEach(([a,b])=>{const i=pts.indexOf(a),j=pts.indexOf(b);if(i<0||j<=i)return;
     let px=0;for(let k=i;k<j;k++)px+=seg[k];if(px>=MIN)return;
     const add=MIN-px,mins=b-a;for(let k=i;k<j;k++)seg[k]+=add*((pts[k+1]-pts[k])/mins)});
+  // short free gaps between blocks (like 5 min before a call) open up too, so the gap shows
+  seg.forEach((v,k)=>{const a=pts[k],b=pts[k+1];if(b-a>=30||v>=GAP)return;
+    const covered=spans.some(([x,y])=>x<b&&y>a),touches=spans.some(([x,y])=>y===a)&&spans.some(([x,y])=>x===b);
+    if(!covered&&touches)seg[k]=GAP});
   const acc=[0];seg.forEach(v=>acc.push(acc[acc.length-1]+v));
   return m=>{if(m<=from)return(m-from)*ppm;if(m>=to)return acc[acc.length-1]+(m-to)*ppm;
     let k=0;while(pts[k+1]<m)k++;return acc[k]+seg[k]*(m-pts[k])/(pts[k+1]-pts[k])};
