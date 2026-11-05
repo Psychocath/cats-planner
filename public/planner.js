@@ -214,7 +214,7 @@ async function load(){
     const d=await r.json();
     S.tasks=d.tasks;S.blocks=d.blocks;S.routines=d.routines;
     S.work={start:d.settings.workStart,end:d.settings.workEnd};S.lead=d.settings.leadMin;
-    S.publicKey=d.alerts.publicKey;S.devices=d.alerts.devices;
+    S.publicKey=d.alerts.publicKey;S.devices=d.alerts.devices;S.connector=d.connectorUrl;
     status("");
     if(!$("#sheetRoot").innerHTML&&document.activeElement?.id!=="quickIn")render();
   }catch(_){status("Can't reach your planner right now. Check your connection; changes will show once it's back.")}
@@ -256,6 +256,7 @@ function openSettings(){
   <div class="two"><div class="f"><label for="sStart">Work day starts</label><input id="sStart" type="time" step="900" value="${S.work.start}"></div><div class="f"><label for="sEnd">Work day ends</label><input id="sEnd" type="time" step="900" value="${S.work.end}"></div></div>
   <div class="f"><span class="lb">Alert me before each block</span><div class="opts" id="sLead">${[5,10,15,30].map(n=>`<button type="button" data-n="${n}" aria-pressed="${S.lead===n}">${n} min</button>`).join("")}</div></div>
   <div class="f"><span class="lb">Phone alerts</span>${alertHtml}<p class="hint">${S.devices?`Alerts are on for ${S.devices} device${S.devices>1?"s":""}.`:"No devices get alerts yet."}</p></div>
+  <div class="f"><span class="lb">Claude connector</span>${S.connector?`<p class="hint">Add this link in Claude under Settings → Connectors → Add custom connector. Anyone with the link can change your planner, so keep it private.</p><div class="quick" style="margin:0"><input id="sConn" readonly value="${esc(S.connector)}" aria-label="Connector link"><button type="button" id="sCopy">Copy</button></div><div class="acts"><button type="button" class="ghost" id="sNewKey">Make a new link</button><button type="button" class="danger" id="sRevoke">Turn off</button></div>`:`<p class="hint">Let Claude read and update your planner from chat.</p><div class="acts"><button type="button" class="ghost" id="sNewKey">Create Claude link</button></div>`}</div>
   <div class="err" id="sErr"></div>
   <div class="acts"><button class="primary" type="submit">Save</button><button type="button" class="ghost" id="sCancel">Cancel</button><button type="button" class="danger" id="sOut">Log out</button></div></form></div>`;
   const err=$("#sErr");
@@ -263,6 +264,10 @@ function openSettings(){
   $("#sLead").onclick=e=>{const b=e.target.closest("button");if(!b)return;$("#sLead").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")};
   const al=$("#sAlerts");if(al)al.onclick=async()=>{al.disabled=true;err.textContent="";try{S.alertsHere?await disableAlerts():await enableAlerts();toast(S.alertsHere?"Alerts are on":"Alerts are off");openSettings()}catch(e){err.textContent=e.message;al.disabled=false}};
   const te=$("#sTest");if(te)te.onclick=async()=>{te.disabled=true;try{await pushApi({action:"test"});toast("Test sent. It should arrive in a few seconds.")}catch(e){err.textContent=e.message}te.disabled=false};
+  const conn=async action=>{err.textContent="";const r=await fetch("/api/connector",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action})});const j=await r.json().catch(()=>({}));if(!r.ok){err.textContent=j.error||"That didn't work. Try again.";return}S.connector=j.url;openSettings();toast(action==="revoke"?"Claude link turned off":"New Claude link ready")};
+  const nk=$("#sNewKey");if(nk)nk.onclick=()=>{if(S.connector&&!nk.dataset.armed){nk.dataset.armed=1;nk.textContent="Tap again: the old link stops working";return}conn("create")};
+  const rv=$("#sRevoke");if(rv)rv.onclick=()=>{if(!rv.dataset.armed){rv.dataset.armed=1;rv.textContent="Tap again to turn off";return}conn("revoke")};
+  const cp=$("#sCopy");if(cp)cp.onclick=()=>{const i=$("#sConn");const done=()=>toast("Link copied");try{navigator.clipboard.writeText(i.value).then(done,()=>{i.select();document.execCommand("copy");done()})}catch(_){i.select();document.execCommand("copy");done()}};
   $("#sOut").onclick=async()=>{await fetch("/api/logout",{method:"POST"});location.href="/login"};
   $("#sForm").onsubmit=async e=>{e.preventDefault();const st=$("#sStart").value,en=$("#sEnd").value,lead=+($("#sLead [aria-pressed=\"true\"]")?.dataset.n||10);
     if(!st||!en||toMin(en)<=toMin(st)){err.textContent="The work day needs to end after it starts.";return}

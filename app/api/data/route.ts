@@ -4,13 +4,15 @@ import { getKeys } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   const d = await loadData();
+  const origin = new URL(req.url).origin;
   return NextResponse.json({
     tasks: d.tasks,
     blocks: d.blocks,
     routines: d.routines,
     settings: d.settings,
+    connectorUrl: d.claudeKey ? `${origin}/api/mcp/${d.claudeKey}` : null,
     alerts: { devices: d.subs.length, publicKey: (await getKeys(d)).publicKey },
   });
 }

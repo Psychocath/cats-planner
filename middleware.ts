@@ -14,6 +14,6 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Everything except the login screen, the cron sender, and files the phone needs before sign-in.
-  matcher: ["/((?!login|api/login|api/cron|_next|sw.js|manifest.webmanifest|icons|favicon.ico|planner.js).*)"],
+  // Everything except the login screen, the cron sender, the Claude connector (it checks its own key), and files the phone needs before sign-in.
+  matcher: ["/((?!login|api/login|api/cron|api/mcp|_next|sw.js|manifest.webmanifest|icons|favicon.ico|planner.js).*)"],
 };
