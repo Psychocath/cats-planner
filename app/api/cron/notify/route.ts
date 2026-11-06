@@ -30,7 +30,13 @@ export async function GET(req: Request) {
   }
 
   const data = await loadData();
-  if (!data.subs.length) return NextResponse.json({ ok: true, skipped: "no devices" });
+  // Record that a check ran, so the app can warn when the scheduler stops. Saved at most every
+  // 30 minutes to keep Blob writes low; the app warns after 45 minutes without a check.
+  const staleCheck = !data.lastCheck || Date.now() - data.lastCheck > 30 * 60000;
+  if (!data.subs.length) {
+    if (staleCheck) await updateData((d) => { d.lastCheck = Date.now(); });
+    return NextResponse.json({ ok: true, skipped: "no devices" });
+  }
 
   const now = localNow();
   const lead = data.settings.leadMin ?? 10;
@@ -56,7 +62,10 @@ export async function GET(req: Request) {
   const mkey = `morning|${now.date}`;
   const mAt = data.settings.morning ? toMin(data.settings.morning) : -1;
   const morningDue = mAt >= 0 && !data.sent[mkey] && mAt <= now.minute + 2 && mAt > now.minute - 10;
-  if (!due.length && !morningDue) return NextResponse.json({ ok: true, due: 0 });
+  if (!due.length && !morningDue) {
+    if (staleCheck) await updateData((d) => { d.lastCheck = Date.now(); });
+    return NextResponse.json({ ok: true, due: 0 });
+  }
 
   const dead = new Set<string>();
   const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -88,6 +97,7 @@ export async function GET(req: Request) {
 
   const weekAgo = Date.now() - 7 * 864e5;
   await updateData((d) => {
+    d.lastCheck = Date.now();
     due.forEach(({ key }) => (d.sent[key] = Date.now()));
     if (morningDue) d.sent[mkey] = Date.now();
     for (const k of Object.keys(d.sent)) if (d.sent[k] < weekAgo) delete d.sent[k];

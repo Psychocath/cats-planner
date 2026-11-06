@@ -14,6 +14,7 @@ export type Data = {
   sent: Record<string, number>;
   vapid?: { publicKey: string; privateKey: string };
   claudeKey?: string;
+  lastCheck?: number;
 };
 export const COLLECTIONS = ["tasks", "blocks", "routines"] as const;
 export type Collection = (typeof COLLECTIONS)[number];

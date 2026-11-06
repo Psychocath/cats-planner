@@ -535,3 +535,34 @@ body:has(.dock:not([hidden])) .fab{display:none}
   #pane.sr{animation:paneInR .22s cubic-bezier(.2,.8,.2,1)}
 }
 .sd{transition:background-color .2s,border-color .2s,color .2s}
+
+/* ---------- Home day card (Today, then Tomorrow) ---------- */
+.dayc h2 span{display:grid;line-height:1.15}
+.dayc h2 small{font-family:var(--f-body);font-weight:500;font-size:.8rem;color:var(--muted)}
+.wi.cur{background:color-mix(in srgb,var(--kc,var(--accent)) 12%,transparent);box-shadow:inset 3px 0 0 var(--kc,var(--accent))}
+.wi.cur .tm{color:var(--ink);font-weight:600}
+.dsw{display:inline-flex;background:var(--sunk);border-radius:999px;padding:3px;flex:none}
+.dsw button{border:0;background:transparent;border-radius:999px;min-height:32px;padding:0 12px;font-weight:600;font-size:.85rem;color:var(--muted)}
+.dsw button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.ddone{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:.92rem;font-weight:600;color:var(--accent)}
+.ddone .ic{width:1.1em;height:1.1em}
+.dtk{display:grid;gap:2px;margin-top:6px;padding-top:8px;border-top:1px solid var(--line)}
+.dth{display:flex;justify-content:space-between;font-size:.8rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:2px 4px 4px}
+.dth span{text-transform:none;letter-spacing:0;font-weight:600}
+.trow{display:flex;align-items:center;gap:4px}
+.trow .check{margin:-6px -2px -6px -8px}
+.trow .wi{grid-template-columns:1.2em minmax(0,1fr)}
+.trow.done .wi{opacity:.55}
+.dopen{margin-top:8px}
+@media (prefers-reduced-motion:no-preference){
+  .dayc.in-next .wd,.dayc.in-prev .wd{animation:dsl .28s ease-out}
+  .dayc.in-prev .wd{--dx:-28px}
+  @keyframes dsl{from{transform:translateX(var(--dx,28px));opacity:0}}
+}
+@media (prefers-reduced-motion:reduce){.dayc.in-next .wd,.dayc.in-prev .wd{animation:dfade .2s ease-out}@keyframes dfade{from{opacity:0}}}
+
+/* ---------- alerts stopped warning ---------- */
+.astale{all:unset;box-sizing:border-box;display:flex;gap:10px;align-items:flex-start;width:100%;margin:0 0 12px;padding:12px 14px;border-radius:var(--r);background:color-mix(in srgb,var(--now) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--now) 40%,transparent);cursor:pointer;font-size:.9rem;color:var(--ink)}
+.astale .ic{color:var(--now);width:1.3em;height:1.3em;flex:none;margin-top:1px}
+.astale b{display:block;color:var(--now)}
+.hint.warn{color:var(--now)}

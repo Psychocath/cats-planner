@@ -288,6 +288,40 @@ function ring(ds){
   const labels=[["0",80,42],["6",122,84],["12",80,128],["18",38,84]].map(([t,x,y])=>`<text x="${x}" y="${y}" text-anchor="middle" class="rl">${t}</text>`).join("");
   return `<svg class="ring2" viewBox="0 0 160 160" role="img" aria-label="Today as a 24-hour ring. Open today" data-goday="${ds}"><g transform="rotate(-90 80 80)">${g}</g>${labels}<line x1="${sx.toFixed(1)}" y1="${sy.toFixed(1)}" x2="${hx.toFixed(1)}" y2="${hy.toFixed(1)}" style="stroke:var(--now)" stroke-width="3" stroke-linecap="round"/><circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="3.5" style="fill:var(--now)"/><text x="80" y="84" text-anchor="middle" class="rt">${hm(m)}</text><text x="80" y="101" text-anchor="middle" class="rs">${cur?inFmt(toMin(cur.end)-m)+" left":"Free now"}</text></svg>`;
 }
+/* Home day card: today's plan until today's tasks are ticked off and its last block has ended, then tomorrow's */
+function todayDone(ds){
+  const m=nowMin(),tk=S.tasks.filter(t=>t.date===ds),its=allItemsFor(ds);
+  const tasksDone=tk.every(t=>t.done),last=its.length?Math.max(...its.map(i=>toMin(i.end))):0;
+  return tasksDone&&last<=m&&(tk.length||its.length||m>=toMin(S.work.end));
+}
+function homeDay(ds){
+  const pick=store.get("homeDay",null);
+  if(pick&&pick.on===ds)return pick.v;
+  return todayDone(ds)?"tomorrow":"today";
+}
+function dayCard(ds){
+  const v=homeDay(ds),auto=!(store.get("homeDay",null)?.on===ds),tomorrow=v==="tomorrow";
+  const day=tomorrow?ymd(addDays(fromYmd(ds),1)):ds,d=fromYmd(day);
+  const its=allItemsFor(day),tk=S.tasks.filter(t=>t.date===day),dl=S.tasks.filter(t=>t.for===day&&t.date!==day&&!t.done);
+  const one=its.filter(i=>i.src!=="routines"),rt=its.filter(i=>i.src==="routines");
+  const done=tk.filter(t=>t.done).length;
+  const sw=`<span class="dsw" role="group" aria-label="Show day">${[["today","Today"],["tomorrow","Tomorrow"]].map(([k,l])=>`<button type="button" data-homeday="${k}" aria-pressed="${v===k}">${l}</button>`).join("")}</span>`;
+  let h=`<section class="sec dayc ${S.homeSlide||""}" id="dayc"><div class="sech"><h2>${ic("cal")}<span>${tomorrow?"Tomorrow":"Today"}<small>${fmt(d,{weekday:"long",day:1,month:"long"})}</small></span></h2>${sw}</div>`;
+  if(tomorrow&&auto&&todayDone(ds))h+=`<p class="ddone">${ic("tick")}Today is done. Here's tomorrow.</p>`;
+  const nm=nowMin(),isCur=it=>day===todayStr()&&toMin(it.start)<=nm&&toMin(it.end)>nm,row=it=>{const r=evRow(it,day);return isCur(it)?r.replace('class="wi ','class="wi cur '):r};
+  const rows=[...one.map(it=>({m:toMin(it.start),h:row(it)})),...rt.map(it=>({m:toMin(it.start),h:row(it)}))].sort((a,b)=>a.m-b.m).map(x=>x.h).join("");
+  h+=`<div class="wd">${rows||`<div class="wi none">No blocks ${tomorrow?"tomorrow":"today"}</div>`}`;
+  if(tk.length||dl.length){
+    h+=`<div class="dtk"><span class="dth">Tasks<span>${tk.length?`${done} of ${tk.length} done`:""}</span></span>`;
+    h+=tk.slice().sort((a,b)=>(a.done-b.done)||((b.priority==="top")-(a.priority==="top"))).map(t=>{const key=`tasks:${t.id}`;return `<div class="trow ${t.done?"done":""}">${chk(t.id,t.done)}<button class="wi" ${openAttr(key)}>${ic(itemIcon(t,t.priority==="top"?"star":"task"),"ki")}<span class="tt ${t.done?"strike":""}">${esc(t.title)}${(t.steps||[]).length?`<span class="sub">${t.steps.filter(x=>x.done).length} of ${t.steps.length} steps</span>`:""}</span></button></div>${peekIf(key)}`}).join("");
+    h+=dl.map(t=>taskItem(t,true)).join("")+`</div>`;
+  }
+  return h+`</div><button class="ghost sm dopen" data-goday="${day}">Open ${tomorrow?"tomorrow":"today"} in Calendar</button></section>`;
+}
+/* alerts health: the scheduler records each check; flag it on Home when checks stop */
+function alertsStale(){if(!S.devices)return false;return !S.lastCheck||Date.now()-S.lastCheck>45*60000}
+function lastCheckTxt(){if(!S.lastCheck)return "No alert check has run yet.";const d=new Date(S.lastCheck),same=ymd(d)===todayStr();return `Last alert check: ${hm(d.getHours()*60+d.getMinutes())}${same?" today":", "+fmt(d,{weekday:"short",day:1,month:"short"})}`}
+
 function renderHome(){
   const n=new Date(),ds=todayStr(),m=nowMin();
   let wx;
@@ -298,12 +332,12 @@ function renderHome(){
   if(isWorkday(n)){const ws=toMin(S.work.start),we=toMin(S.work.end),pct=Math.max(0,Math.min(100,Math.round((m-ws)/(we-ws)*100))),fw=freeWork(ds);
     day=`<div class="dayp"><div class="dpl"><span>Work day · ${m<ws?"starts "+S.work.start:m>=we?"finished":inFmt(we-m)+" left"}</span><span>${m>=we?"":(fw?inFmt(fw)+" free":"fully booked")}</span></div><div class="bar"><span style="width:${pct}%"></span></div></div>`}
   else day=`<div class="dpl"><span>Day off</span></div>`;
-  let h=`<section class="card ringc">${ring(ds)}<div class="side">${wx}${day}</div></section>`;
+  let h=alertsStale()?`<button class="astale" data-settings>${ic("bell")}<span><b>Phone alerts have stopped</b>${esc(lastCheckTxt())} Tap to check.</span></button>`:"";
+  h+=`<section class="card ringc">${ring(ds)}<div class="side">${wx}${day}</div></section>`;
   h+=nowNext(ds);
   h+=top3Html(ds,false);
   h+=`<div class="qa sec"><button data-qa="block">${ic("plus")}Block</button><button data-qa="task">${ic("task")}Task</button><button data-qa="focus">${ic("focus")}Focus</button><button data-qa="routines">${ic("repeat")}Routines</button></div>`;
-  const tm=addDays(n,1),tds=ymd(tm),tIts=allItemsFor(tds),tTasks=S.tasks.filter(t=>t.date===tds&&!t.done),tDl=S.tasks.filter(t=>t.for===tds&&t.date!==tds&&!t.done);
-  h+=`<section class="sec"><div class="sech"><h2>${ic("cal")}Tomorrow</h2><button class="ghost sm" data-goday="${tds}">${fmt(tm,{weekday:"short",day:1,month:"short"})}</button></div>`+(tIts.length||tTasks.length||tDl.length?`<div class="wd">${dayList(tds,tIts,tTasks,tDl)}</div>`:`<div class="empty">Nothing planned</div>`)+`</section>`;
+  h+=dayCard(ds);
   const al=upcomingAlerts(ds);
   h+=`<section class="sec"><div class="sech"><h2>${ic("bell")}Reminders today</h2></div>`+(al.length?`<div class="wd">${al.map(a=>`<button class="wi k-${a.it.kind||"work"}" data-goday="${a.day}"><span class="tm">${hm(a.at)}</span>${ic(itemIcon(a.it,"bell"),"ki")}<span class="tt">${esc(a.it.title)}<span class="sub">${a.d?`${a.d===1?"Tomorrow":shortD(a.day)} at ${a.it.start}`:(a.r===0?"At the start":inFmt(a.r)+" before it starts")}</span></span></button>`).join("")}</div>`:`<div class="empty">No more reminders today</div>`)+(S.alertsHere?"":`<p class="mut small">Phone alerts are off on this device. <button class="wmore" style="display:inline-flex;min-height:32px" data-settings>Turn them on</button></p>`)+`</section>`;
   $("#view").innerHTML=h;
@@ -707,6 +741,7 @@ document.addEventListener("click",e=>{
       if(cur)startFocus(cur.src,S[cur.src].find(x=>x.id===cur.id),ds);
       else{const t=S.tasks.find(x=>x.priority==="top"&&!x.done&&x.date&&x.date<=ds)||S.tasks.find(x=>!x.done&&x.date===ds);startFocus("tasks",t||{id:"_free",title:"Focus session",mins:25},ds)}}
     return}
+  const hd=e.target.closest("[data-homeday]");if(hd){const v=hd.dataset.homeday,ds=todayStr();if(v===homeDay(ds))return;store.set("homeDay",v===(todayDone(ds)?"tomorrow":"today")?null:{on:ds,v});S.homeSlide=v==="tomorrow"?"in-next":"in-prev";render();S.homeSlide="";return}
   if(e.target.closest("[data-settings]")){openSettings();return}
   const gd=e.target.closest("[data-goday]");if(gd){goCal("day",gd.dataset.goday,pt(e));return}
 });
@@ -749,7 +784,7 @@ async function load(){
     if(r.status===401){location.href="/login";return}
     if(!r.ok)throw new Error();
     const d=await r.json();applyData(d);
-    S.publicKey=d.alerts.publicKey;S.devices=d.alerts.devices;S.connector=d.connectorUrl;
+    S.publicKey=d.alerts.publicKey;S.devices=d.alerts.devices;S.lastCheck=d.alerts.lastCheck||null;S.connector=d.connectorUrl;
     cacheData();status("");
     if(!$("#sheetRoot").innerHTML&&document.activeElement?.id!=="quickIn")render();
   }catch(_){status(S.cached?"Showing your last saved plan. Changes will sync once you're back online.":"Can't reach your planner right now. Check your connection; changes will show once it's back.")}
@@ -793,6 +828,7 @@ function openSettings(){
   else if(!pushSupported)alertHtml=`<p class="hint">This browser can't show alerts.</p>`;
   else if(S.alertsHere)alertHtml=`<details class="onrow"><summary><span class="on">${ic("tick")}On</span><span class="mg">Manage</span></summary><div class="acts"><button type="button" class="ghost" id="sTest">Send a test</button><button type="button" class="danger" id="sAlerts">Turn off on this device</button></div></details>`;
   else alertHtml=`<div class="acts"><button type="button" class="primary" id="sAlerts">${ic("bell")}Turn on alerts</button></div>`;
+  if(S.devices)alertHtml+=`<p class="hint ${alertsStale()?"warn":""}">${esc(lastCheckTxt())}${alertsStale()?" Alerts only go out while cron-job.org opens the alert link every 5 minutes.":""}</p>`;
   sheet("Settings",`<form class="in" id="sForm"><h3>Settings</h3>
   <div class="f"><span class="lb">Colours</span><div class="pal" id="sPal">${PALS.map(([k,l,c])=>`<button type="button" data-p="${k}" aria-pressed="${S.palette===k}"><span class="sw">${c.map(x=>`<i style="background:${x}"></i>`).join("")}</span>${l}</button>`).join("")}</div></div>
   <div class="two">${tp("sStart",S.work.start,"Work day starts")}${tp("sEnd",S.work.end,"Work day ends")}</div>

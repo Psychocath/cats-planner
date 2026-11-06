@@ -13,7 +13,7 @@ export async function GET(req: Request) {
     routines: d.routines,
     settings: d.settings,
     connectorUrl: d.claudeKey ? `${origin}/api/mcp/${d.claudeKey}` : null,
-    alerts: { devices: d.subs.length, publicKey: (await getKeys(d)).publicKey },
+    alerts: { devices: d.subs.length, lastCheck: d.lastCheck ?? null, publicKey: (await getKeys(d)).publicKey },
   });
 }
 
