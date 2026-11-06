@@ -263,11 +263,14 @@ const WX={0:"Clear",1:"Mostly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:
 S.wx=store.get("wx",null);
 async function loadWeather(force){
   if(S.wx&&!S.wx.err&&!force&&Date.now()-S.wx.at<15*60000)return;
+  // after a failed fetch, wait 5 minutes before trying again, so an offline phone doesn't retry in a loop
+  if(!force&&loadWeather.failedAt&&Date.now()-loadWeather.failedAt<5*60000)return;
   if(loadWeather.busy)return;loadWeather.busy=true;
   try{const r=await fetch("https://api.open-meteo.com/v1/forecast?latitude=-33.9249&longitude=18.4241&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Africa%2FJohannesburg&forecast_days=1");
     if(!r.ok)throw 0;const j=await r.json();
     S.wx={at:Date.now(),t:Math.round(j.current.temperature_2m),code:j.current.weather_code,wind:Math.round(j.current.wind_speed_10m),hi:Math.round(j.daily.temperature_2m_max[0]),lo:Math.round(j.daily.temperature_2m_min[0]),rain:j.daily.precipitation_probability_max[0]};store.set("wx",S.wx);
-  }catch(_){if(!S.wx)S.wx={at:Date.now(),err:1}}
+    loadWeather.failedAt=0;
+  }catch(_){loadWeather.failedAt=Date.now();if(!S.wx)S.wx={at:Date.now(),err:1}}
   loadWeather.busy=false;
   if(S.view==="home"&&!$("#sheetRoot").innerHTML)render();
 }
