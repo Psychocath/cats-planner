@@ -13,7 +13,7 @@ const SHELL = `
 <div class="wrap">
   <header class="top">
     <div class="daterow">
-      <button class="icon" id="out" aria-label="Zoom out">${icon('<path d="M15 6l-6 6 6 6"/>')}</button>
+      <button class="icon" id="out" aria-label="Zoom out">${icon('<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>')}</button>
       <h1 id="dtitle"><small id="dsub"></small><span id="dmain"></span></h1>
       <button class="icon" id="prev" aria-label="Previous">${icon('<path d="M15 6l-6 6 6 6"/>')}</button>
       <button class="icon" id="next" aria-label="Next">${icon('<path d="M9 6l6 6-6 6"/>')}</button>
