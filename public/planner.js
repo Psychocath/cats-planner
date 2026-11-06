@@ -361,7 +361,7 @@ function renderHome(){
   h+=dayCard(ds);
   const al=upcomingAlerts(ds);
   h+=`<section class="sec"><div class="sech"><h2>${ic("bell")}Reminders today</h2></div>`+(al.length?`<div class="wd">${al.map(a=>`<button class="wi k-${a.it.kind||"work"}" data-goday="${a.day}"><span class="tm">${hm(a.at)}</span>${ic(itemIcon(a.it,"bell"),"ki")}<span class="tt">${esc(a.it.title)}<span class="sub">${a.d?`${a.d===1?"Tomorrow":shortD(a.day)} at ${a.it.start}`:(a.r===0?"At the start":inFmt(a.r)+" before it starts")}</span></span></button>`).join("")}</div>`:`<div class="empty">No more reminders today</div>`)+(S.alertsHere?"":`<p class="mut small">Phone alerts are off on this device. <button class="wmore" style="display:inline-flex;min-height:32px" data-settings>Turn them on</button></p>`)+`</section>`;
-  $("#view").innerHTML=h;
+  $("#view").innerHTML=`<div class="homev">${h}</div>`;
   loadWeather();
 }
 

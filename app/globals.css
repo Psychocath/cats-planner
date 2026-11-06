@@ -584,3 +584,12 @@ body:has(.dock:not([hidden])) .fab{display:none}
 .astale .ic{color:var(--now);width:1.3em;height:1.3em;flex:none;margin-top:1px}
 .astale b{display:block;color:var(--now)}
 .hint.warn{color:var(--now)}
+
+/* Home: one even gap between every section */
+.homev{display:flex;flex-direction:column;gap:24px;padding-top:16px}
+.homev>*{margin:0}
+.homev .sech{margin-bottom:12px}
+.homev .dayc .dopen{margin-top:12px;align-self:flex-start}
+.homev .dayc{display:flex;flex-direction:column}
+.homev .dayc .ddone{margin:0 0 12px}
+.homev section>.hint,.homev section>p.mut{margin:12px 0 0}
