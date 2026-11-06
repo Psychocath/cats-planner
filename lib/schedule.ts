@@ -35,12 +35,13 @@ export function shiftDate(date: string, n: number) {
   return { date: x.toISOString().slice(0, 10), wd: ((x.getUTCDay() + 6) % 7) + 1 };
 }
 
-export function itemsFor(d: Data, date: string, wd: number): Planned[] {
+/** skipDone leaves out blocks and routine days Cat has ticked off, so they don't send alerts. */
+export function itemsFor(d: Data, date: string, wd: number, skipDone = false): Planned[] {
   const blocks = d.blocks
-    .filter((b) => b.date === date)
+    .filter((b) => b.date === date && !(skipDone && b.done))
     .map((b: Item) => ({ key: `${date}|b:${b.id}|${b.start}`, title: String(b.title), start: String(b.start), end: String(b.end), routine: false, remind: typeof b.remind === "number" ? b.remind : undefined, remind2: typeof b.remind2 === "number" ? b.remind2 : undefined }));
   const routines = d.routines
-    .filter((r) => ((r.days as number[]) || []).includes(wd) && !((r.skips as string[]) || []).includes(date) && (!r.from || date >= String(r.from)) && (!r.until || date <= String(r.until)))
+    .filter((r) => ((r.days as number[]) || []).includes(wd) && !((r.skips as string[]) || []).includes(date) && !(skipDone && ((r.doneOn as string[]) || []).includes(date)) && (!r.from || date >= String(r.from)) && (!r.until || date <= String(r.until)))
     .map((r: Item) => ({ key: `${date}|r:${r.id}|${r.start}`, title: String(r.title), start: String(r.start), end: String(r.end), routine: true, remind: typeof r.remind === "number" ? r.remind : undefined, remind2: typeof r.remind2 === "number" ? r.remind2 : undefined }));
   return [...blocks, ...routines].sort((a, b) => toMin(a.start) - toMin(b.start));
 }

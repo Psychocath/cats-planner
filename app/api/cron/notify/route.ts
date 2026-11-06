@@ -46,7 +46,7 @@ export async function GET(req: Request) {
   // Look 8 days ahead so "1 day" and "2 days before" style reminders fire on time.
   const candidates = Array.from({ length: 8 }, (_, d) => {
     const day = d ? shiftDate(now.date, d) : { date: now.date, wd: now.wd };
-    return itemsFor(data, day.date, day.wd).map((i) => ({ i, offset: d * 1440, date: day.date, wd: day.wd }));
+    return itemsFor(data, day.date, day.wd, true).map((i) => ({ i, offset: d * 1440, date: day.date, wd: day.wd }));
   }).flat();
   // Up to 2 alerts per item: its main reminder (or the default) and an optional second one.
   const due = candidates.flatMap((c) => { const { i, offset } = c; return (

@@ -539,8 +539,6 @@ body:has(.dock:not([hidden])) .fab{display:none}
 /* ---------- Home day card (Today, then Tomorrow) ---------- */
 .dayc h2 span{display:grid;line-height:1.15}
 .dayc h2 small{font-family:var(--f-body);font-weight:500;font-size:.8rem;color:var(--muted)}
-.wi.cur{background:color-mix(in srgb,var(--kc,var(--accent)) 12%,transparent);box-shadow:inset 3px 0 0 var(--kc,var(--accent))}
-.wi.cur .tm{color:var(--ink);font-weight:600}
 .dsw{display:inline-flex;background:var(--sunk);border-radius:999px;padding:3px;flex:none}
 .dsw button{border:0;background:transparent;border-radius:999px;min-height:32px;padding:0 12px;font-weight:600;font-size:.85rem;color:var(--muted)}
 .dsw button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -549,10 +547,30 @@ body:has(.dock:not([hidden])) .fab{display:none}
 .dtk{display:grid;gap:2px;margin-top:6px;padding-top:8px;border-top:1px solid var(--line)}
 .dth{display:flex;justify-content:space-between;font-size:.8rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:2px 4px 4px}
 .dth span{text-transform:none;letter-spacing:0;font-weight:600}
-.trow{display:flex;align-items:center;gap:4px}
-.trow .check{margin:-6px -2px -6px -8px}
-.trow .wi{grid-template-columns:1.2em minmax(0,1fr)}
-.trow.done .wi{opacity:.55}
+/* rows on Home: tap the row to open it, note and tick sit on the right */
+.hrow{display:flex;align-items:center;border-radius:8px;min-width:0}
+.hmain{all:unset;box-sizing:border-box;flex:1;min-width:0;display:grid;grid-template-columns:1.2em minmax(0,1fr);gap:10px;align-items:start;padding:8px 4px;cursor:pointer;font-size:.95rem}
+.hmain:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:8px}
+.hmain .ki{color:var(--kc,var(--muted));width:1.15em;height:1.15em;margin-top:2px}
+.hmain .tt{min-width:0;overflow-wrap:anywhere;display:grid;gap:1px}
+.hmain .tt b{font-weight:500}
+.hmain .tm{font-size:.8rem;color:var(--muted)}
+.hmain .sub{font-size:.82rem;color:var(--muted)}
+.hnote{display:flex;gap:5px;align-items:flex-start;font-size:.84rem;color:var(--muted);margin-top:2px;white-space:pre-line}
+.hnote .ic{width:.95em;height:.95em;flex:none;margin-top:3px}
+.hbtn{flex:none;width:40px;height:44px;border:0;background:transparent;color:var(--muted);display:grid;place-items:center;border-radius:10px;padding:0}
+.hbtn .ic{width:1.2em;height:1.2em}
+.hbtn.has{color:var(--accent)}
+.hrow .check{margin:0 -4px 0 0}
+.hrow.cur{background:color-mix(in srgb,var(--kc,var(--accent)) 12%,transparent);box-shadow:inset 3px 0 0 var(--kc,var(--accent))}
+.hrow.cur .tm{color:var(--ink);font-weight:600}
+.hrow.past .hmain{opacity:.5}
+.hrow.done .hmain{opacity:.5}
+.hrow.done .hmain b{text-decoration:line-through}
+.hnoteed{display:grid;gap:8px;margin:2px 0 8px;padding:10px;border-radius:12px;background:var(--bg);border:1px solid var(--line)}
+.hnoteed textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;resize:vertical;min-height:72px}
+.hnoteed .acts{display:flex;gap:6px}
+.hnoteed .acts button{min-height:40px;font-size:.88rem;padding:0 16px}
 .dopen{margin-top:8px}
 @media (prefers-reduced-motion:no-preference){
   .dayc.in-next .wd,.dayc.in-prev .wd{animation:dsl .28s ease-out}

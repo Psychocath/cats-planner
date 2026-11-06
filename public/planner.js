@@ -184,7 +184,8 @@ function panel(key){
     rows.push(["Reminder",remindLabel(rec.remind)+(typeof rec.remind2==="number"?" and "+remindLabel(rec.remind2):"")]);
     if(rec.buffer)rows.push(["Buffer",rec.buffer+" min after"])}
   if(rec.notes)rows.push(["Notes",esc(rec.notes).replace(/\n/g,"<br>")]);
-  const ICN={For:"flag",Due:"cal",When:"cal",Time:"clock",Repeats:"repeat",Reminder:"bell",Buffer:"buffer",Notes:"note",Priority:"star"};
+  if(isR&&date&&rec.dayNotes?.[date])rows.push(["Note for this day",esc(rec.dayNotes[date]).replace(/\n/g,"<br>")]);
+  const ICN={For:"flag",Due:"cal",When:"cal",Time:"clock",Repeats:"repeat",Reminder:"bell",Buffer:"buffer",Notes:"note","Note for this day":"note",Priority:"star"};
   const steps=rec.steps||[],skipped=isR&&date&&(rec.skips||[]).includes(date);
   const stepsHtml=steps.length?`<div class="steps"><div class="sh"><span class="lb">Steps</span><span class="cnt">${steps.filter(x=>x.done).length} of ${steps.length}</span></div>${steps.map((x,i)=>`<label class="step ${x.done?"done":""}"><input type="checkbox" data-step="${i}" data-key="${key}" ${x.done?"checked":""}><span>${esc(x.text)}</span></label>`).join("")}</div>`:"";
   return`<div class="peek"><dl class="dl">${rows.map(([k,v])=>`<dt>${ic(ICN[k]||"note")}${k}</dt><dd>${v}</dd>`).join("")}</dl>${isT?track(rec):""}${stepsHtml}
@@ -272,7 +273,7 @@ async function loadWeather(force){
     loadWeather.failedAt=0;
   }catch(_){loadWeather.failedAt=Date.now();if(!S.wx)S.wx={at:Date.now(),err:1}}
   loadWeather.busy=false;
-  if(S.view==="home"&&!$("#sheetRoot").innerHTML)render();
+  if(S.view==="home"&&!$("#sheetRoot").innerHTML&&document.activeElement?.id!=="hNoteIn")render();
 }
 function upcomingAlerts(ds){
   const m=nowMin(),out=[],base=fromYmd(ds);
@@ -294,8 +295,26 @@ function ring(ds){
 /* Home day card: today's plan until today's tasks are ticked off and its last block has ended, then tomorrow's */
 function todayDone(ds){
   const m=nowMin(),tk=S.tasks.filter(t=>t.date===ds),its=allItemsFor(ds);
-  const tasksDone=tk.every(t=>t.done),last=its.length?Math.max(...its.map(i=>toMin(i.end))):0;
+  const tasksDone=tk.every(t=>t.done),open=its.filter(i=>!itemDone(i,ds)),last=open.length?Math.max(...open.map(i=>toMin(i.end))):0;
   return tasksDone&&last<=m&&(tk.length||its.length||m>=toMin(S.work.end));
+}
+/* events can be ticked off and given a note from Home. Blocks keep done and notes on the block;
+   a routine keeps them per day (doneOn, dayNotes) so ticking today's school run leaves the rest of the week alone */
+function itemDone(it,ds){if(it.src==="routines"){const r=S.routines.find(x=>x.id===it.id);return!!r&&(r.doneOn||[]).includes(ds)}return!!it.done}
+function itemNote(it,ds){if(it.src==="routines"){const r=S.routines.find(x=>x.id===it.id);return r?.dayNotes?.[ds]||""}return it.notes||""}
+function setItemDone(key){const r=resolve(key);if(!r)return;const{col,rec,date}=r;
+  if(col==="routines"){const cut=ymd(addDays(new Date(),-30)),on=(rec.doneOn||[]).filter(d=>d>=cut),has=on.includes(date);save("routines",rec.id,{...rec,doneOn:has?on.filter(d=>d!==date):[...on,date]});return!has}
+  save("blocks",rec.id,{...rec,done:!rec.done});return!rec.done}
+function setItemNote(key,txt){const r=resolve(key);if(!r)return;const{col,rec,date}=r;
+  if(col==='tasks'){const nr={...rec};if(txt)nr.notes=txt;else delete nr.notes;save('tasks',rec.id,nr);return}
+  if(col==="routines"){const dn={...(rec.dayNotes||{})};if(txt)dn[date]=txt;else delete dn[date];const cut=ymd(addDays(new Date(),-30));Object.keys(dn).forEach(d=>{if(d<cut)delete dn[d]});save("routines",rec.id,{...rec,dayNotes:dn});return}
+  const nr={...rec};if(txt)nr.notes=txt;else delete nr.notes;save("blocks",rec.id,nr)}
+function homeRow(it,ds){
+  const key=`${it.src}:${it.id}:${ds}`,done=itemDone(it,ds),note=itemNote(it,ds),nm=nowMin(),cur=ds===todayStr()&&toMin(it.start)<=nm&&toMin(it.end)>nm;
+  let h=`<div class="hrow k-${it.kind||"work"} ${done?"done":timing(it,ds)} ${cur&&!done?"cur":""}"><button class="hmain" ${openAttr(key)}>${ic(itemIcon(it,it.src==="routines"?"repeat":it.kind||"work"),"ki")}<span class="tt"><span class="tm">${it.start}–${it.end}</span><b>${esc(it.title)}</b>${note?`<span class="hnote">${ic("note")}${esc(note)}</span>`:""}</span></button>`;
+  h+=`<button type="button" class="hbtn ${note?"has":""}" data-hnote="${key}" aria-label="${note?"Edit note":"Add a note"}">${ic("note")}</button><button class="check" data-hdone="${key}" aria-pressed="${done}" aria-label="${done?"Mark not done":"Mark done"}"><i>${ic("tick")}</i></button></div>`;
+  if(S.noteFor===key)h+=`<form class="hnoteed" data-hnoteform="${key}"><textarea id="hNoteIn" rows="3" placeholder="Add a note">${esc(note)}</textarea><div class="acts"><button class="primary" type="submit">Save note</button><button class="ghost" type="button" data-hnotecancel>Cancel</button></div></form>`;
+  return h+peekIf(key);
 }
 function homeDay(ds){
   const pick=store.get("homeDay",null);
@@ -311,12 +330,11 @@ function dayCard(ds){
   const sw=`<span class="dsw" role="group" aria-label="Show day">${[["today","Today"],["tomorrow","Tomorrow"]].map(([k,l])=>`<button type="button" data-homeday="${k}" aria-pressed="${v===k}">${l}</button>`).join("")}</span>`;
   let h=`<section class="sec dayc ${S.homeSlide||""}" id="dayc"><div class="sech"><h2>${ic("cal")}<span>${tomorrow?"Tomorrow":"Today"}<small>${fmt(d,{weekday:"long",day:1,month:"long"})}</small></span></h2>${sw}</div>`;
   if(tomorrow&&auto&&todayDone(ds))h+=`<p class="ddone">${ic("tick")}Today is done. Here's tomorrow.</p>`;
-  const nm=nowMin(),isCur=it=>day===todayStr()&&toMin(it.start)<=nm&&toMin(it.end)>nm,row=it=>{const r=evRow(it,day);return isCur(it)?r.replace('class="wi ','class="wi cur '):r};
-  const rows=[...one.map(it=>({m:toMin(it.start),h:row(it)})),...rt.map(it=>({m:toMin(it.start),h:row(it)}))].sort((a,b)=>a.m-b.m).map(x=>x.h).join("");
+  const rows=[...one.map(it=>({m:toMin(it.start),h:homeRow(it,day)})),...rt.map(it=>({m:toMin(it.start),h:homeRow(it,day)}))].sort((a,b)=>a.m-b.m).map(x=>x.h).join("");
   h+=`<div class="wd">${rows||`<div class="wi none">No blocks ${tomorrow?"tomorrow":"today"}</div>`}`;
   if(tk.length||dl.length){
     h+=`<div class="dtk"><span class="dth">Tasks<span>${tk.length?`${done} of ${tk.length} done`:""}</span></span>`;
-    h+=tk.slice().sort((a,b)=>(a.done-b.done)||((b.priority==="top")-(a.priority==="top"))).map(t=>{const key=`tasks:${t.id}`;return `<div class="trow ${t.done?"done":""}">${chk(t.id,t.done)}<button class="wi" ${openAttr(key)}>${ic(itemIcon(t,t.priority==="top"?"star":"task"),"ki")}<span class="tt ${t.done?"strike":""}">${esc(t.title)}${(t.steps||[]).length?`<span class="sub">${t.steps.filter(x=>x.done).length} of ${t.steps.length} steps</span>`:""}</span></button></div>${peekIf(key)}`}).join("");
+    h+=tk.slice().sort((a,b)=>(a.done-b.done)||((b.priority==="top")-(a.priority==="top"))).map(t=>{const key=`tasks:${t.id}`;return `<div class="hrow ${t.done?"done":""}"><button class="hmain" ${openAttr(key)}>${ic(itemIcon(t,t.priority==="top"?"star":"task"),"ki")}<span class="tt"><b>${esc(t.title)}</b>${(t.steps||[]).length?`<span class="sub">${t.steps.filter(x=>x.done).length} of ${t.steps.length} steps</span>`:""}${t.notes?`<span class="hnote">${ic("note")}${esc(t.notes)}</span>`:""}</span></button><button type="button" class="hbtn ${t.notes?"has":""}" data-hnote="${key}" aria-label="${t.notes?"Edit note":"Add a note"}">${ic("note")}</button>${chk(t.id,t.done)}</div>${S.noteFor===key?`<form class="hnoteed" data-hnoteform="${key}"><textarea id="hNoteIn" rows="3" placeholder="Add a note">${esc(t.notes||"")}</textarea><div class="acts"><button class="primary" type="submit">Save note</button><button class="ghost" type="button" data-hnotecancel>Cancel</button></div></form>`:""}${peekIf(key)}`}).join("");
     h+=dl.map(t=>taskItem(t,true)).join("")+`</div>`;
   }
   return h+`</div><button class="ghost sm dopen" data-goday="${day}">Open ${tomorrow?"tomorrow":"today"} in Calendar</button></section>`;
@@ -744,6 +762,9 @@ document.addEventListener("click",e=>{
       if(cur)startFocus(cur.src,S[cur.src].find(x=>x.id===cur.id),ds);
       else{const t=S.tasks.find(x=>x.priority==="top"&&!x.done&&x.date&&x.date<=ds)||S.tasks.find(x=>!x.done&&x.date===ds);startFocus("tasks",t||{id:"_free",title:"Focus session",mins:25},ds)}}
     return}
+  const hdn=e.target.closest("[data-hdone]");if(hdn){const nowDone=setItemDone(hdn.dataset.hdone);if(nowDone&&navigator.vibrate)try{navigator.vibrate(12)}catch(_){}return}
+  const hn=e.target.closest("[data-hnote]");if(hn){S.noteFor=S.noteFor===hn.dataset.hnote?null:hn.dataset.hnote;render();if(S.noteFor){const ta=$("#hNoteIn");if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length)}}return}
+  if(e.target.closest("[data-hnotecancel]")){S.noteFor=null;render();return}
   const hd=e.target.closest("[data-homeday]");if(hd){const v=hd.dataset.homeday,ds=todayStr();if(v===homeDay(ds))return;store.set("homeDay",v===(todayDone(ds)?"tomorrow":"today")?null:{on:ds,v});S.homeSlide=v==="tomorrow"?"in-next":"in-prev";render();S.homeSlide="";return}
   if(e.target.closest("[data-settings]")){openSettings();return}
   const gd=e.target.closest("[data-goday]");if(gd){goCal("day",gd.dataset.goday,pt(e));return}
@@ -756,6 +777,7 @@ $("#out").onclick=zoomOut;
 $("#nowbar").onclick=()=>goCal("day",todayStr());
 $("#search").onclick=openSearch;
 $("#fab").onclick=()=>{if(S.view==="tasks")openSheet("tasks");else if(S.view==="routines")openSheet("routines");else quickBlock(ymd(S.cur))};
+document.addEventListener("submit",e=>{const nf=e.target.closest("[data-hnoteform]");if(nf){e.preventDefault();const k=nf.dataset.hnoteform,v=$("#hNoteIn").value.trim();S.noteFor=null;setItemNote(k,v);toast(v?"Note saved":"Note removed");return}});
 document.addEventListener("submit",e=>{if(e.target.id!=="quick")return;e.preventDefault();const i=$("#quickIn"),t=i.value.trim();if(!t)return;const id=uid();save("tasks",id,{title:t,date:null,priority:"normal",mins:null,done:false,createdAt:Date.now()});toast("Added to Inbox",()=>remove("tasks",id));setTimeout(()=>{const n=$("#quickIn");if(n)n.focus()},30)});
 
 /* swipe left and right between periods; pinch to zoom in and out */
@@ -773,6 +795,7 @@ document.addEventListener("submit",e=>{if(e.target.id!=="quick")return;e.prevent
 
 /* every 30 seconds: keep times live, without moving the page */
 setInterval(()=>{applyTint();if($("#sheetRoot").innerHTML||$("#focus"))return;
+  if(document.activeElement?.id==="hNoteIn")return;
   if(S.view==="home"||(S.view==="cal"&&(S.zoom==="week"||(S.zoom==="day"&&ymd(S.cur)===todayStr()))))render();else renderNowbar()},30000);
 
 /* ---------- store: cached data shows at once, fresh data follows ---------- */
@@ -789,7 +812,7 @@ async function load(){
     const d=await r.json();applyData(d);
     S.publicKey=d.alerts.publicKey;S.devices=d.alerts.devices;S.lastCheck=d.alerts.lastCheck||null;S.connector=d.connectorUrl;
     cacheData();status("");
-    if(!$("#sheetRoot").innerHTML&&document.activeElement?.id!=="quickIn")render();
+    if(!$("#sheetRoot").innerHTML&&!["quickIn","hNoteIn"].includes(document.activeElement?.id))render();
   }catch(_){status(S.cached?"Showing your last saved plan. Changes will sync once you're back online.":"Can't reach your planner right now. Check your connection; changes will show once it's back.")}
 }
 let myVersion=null;
