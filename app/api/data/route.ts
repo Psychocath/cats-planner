@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     const settings = await updateData((d) => {
       if (s.workStart) d.settings.workStart = String(s.workStart);
       if (s.workEnd) d.settings.workEnd = String(s.workEnd);
-      if (s.palette !== undefined && ["calm", "ocean", "blossom", "collective"].includes(String(s.palette))) d.settings.palette = String(s.palette);
+      if (s.palette !== undefined && ["rainbow", "calm", "ocean", "blossom", "collective"].includes(String(s.palette))) d.settings.palette = String(s.palette);
       if (s.morning !== undefined) d.settings.morning = s.morning && s.morning !== "off" && TIME.test(String(s.morning)) ? String(s.morning) : null;
       if (s.leadMin !== undefined) d.settings.leadMin = Math.max(0, Math.min(60, Number(s.leadMin) || 0));
       return d.settings;

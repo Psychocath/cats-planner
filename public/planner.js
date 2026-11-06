@@ -35,13 +35,13 @@ const strip=r=>{const o={...r};delete o.id;delete o.src;delete o._lane;delete o.
 const store={get(k,d){try{const v=localStorage.getItem(k);return v===null?d:JSON.parse(v)}catch(_){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(_){}}};
 
 /* ---------- colours and time-of-day tint ---------- */
-const PALS=[["calm","Calm",["#3B8C7A","#5A9BD5","#C0607A","#A0742A"]],["ocean","Ocean",["#2F7FD8","#21B5A5","#C2557E","#B07A1E"]],["blossom","Blossom",["#7B6CE0","#E77FA0","#3E9B86","#B7802F"]],["collective","Cat Collective",["#D946EF","#8B5CF6","#0C0912","#FCD34D"]]];
+const PALS=[["rainbow","Rainbow",["#F43F5E","#F59E0B","#10B981","#3B82F6","#8B5CF6"]],["calm","Calm",["#3B8C7A","#5A9BD5","#C0607A","#A0742A"]],["ocean","Ocean",["#2F7FD8","#21B5A5","#C2557E","#B07A1E"]],["blossom","Blossom",["#7B6CE0","#E77FA0","#3E9B86","#B7802F"]],["collective","Cat Collective",["#D946EF","#8B5CF6","#0C0912","#FCD34D"]]];
 function applyPalette(p){
-  p=PALS.some(x=>x[0]===p)?p:"calm";
+  p=PALS.some(x=>x[0]===p)?p:"rainbow";
   if(p==="calm")document.documentElement.removeAttribute("data-palette");else document.documentElement.setAttribute("data-palette",p);
   store.set("palette",p);S.palette=p;
 }
-applyPalette(store.get("palette","calm"));
+applyPalette(store.get("palette","rainbow"));
 function applyTint(){const h=new Date().getHours();document.documentElement.setAttribute("data-tod",h<5?"night":h<11?"morning":h<17?"day":h<21?"evening":"night")}
 applyTint();
 
@@ -355,9 +355,10 @@ function layersHtml(){
   if(!onNow)chips.unshift(`<button class="lc today" data-today>${ic("cal")}${S.zoom==="day"?"Today":S.zoom==="week"?"This week":"This month"}</button>`);
   return `<div class="layers" role="group" aria-label="Show or hide">${chips.join("")}</div>`;
 }
+function topKind(ds){const mins={};S.blocks.filter(x=>x.date===ds).forEach(x=>{const k=x.kind||"work";mins[k]=(mins[k]||0)+toMin(x.end)-toMin(x.start)});const t=Object.entries(mins).sort((a,b)=>b[1]-a[1])[0];return t?t[0]:null}
 function dayStrip(){
   const m=monday(S.cur),sel=ymd(S.cur),td=todayStr();
-  return `<div class="strip" role="group" aria-label="Days this week">${[0,1,2,3,4,5,6].map(i=>{const d=addDays(m,i),ds=ymd(d),p=bookedPct(ds);return `<button class="sd ${ds===sel?"on":""} ${ds===td?"td":""} ${i>4?"we":""}" data-pick="${ds}" aria-label="${longD(ds)}"><small>${DAYN[i].slice(0,2)}</small><b>${d.getDate()}</b><span class="ld"><span style="width:${p}%"></span></span></button>`}).join("")}</div>`;
+  return `<div class="strip" role="group" aria-label="Days this week">${[0,1,2,3,4,5,6].map(i=>{const d=addDays(m,i),ds=ymd(d),p=bookedPct(ds);const k=topKind(ds);return `<button class="sd ${ds===sel?"on":""} ${ds===td?"td":""} ${i>4?"we":""} ${k?"k-"+k:""}" data-pick="${ds}" aria-label="${longD(ds)}"><small>${DAYN[i].slice(0,2)}</small><b>${d.getDate()}</b><span class="ld"><span style="width:${p}%"></span></span></button>`}).join("")}</div>`;
 }
 function weekStrip(){
   const first=new Date(S.cur.getFullYear(),S.cur.getMonth(),1),sel=ymd(monday(S.cur)),out=[];
@@ -458,8 +459,8 @@ function renderWeek(){
   h+=`<div class="week" style="margin-top:14px">`;
   for(let i=0;i<7;i++){const d=addDays(mo,i),ds=ymd(d),its=itemsFor(ds);
     const tk=tasksDue(ds).filter(t=>!t.done).sort((a,b)=>(a.priority==="top"?0:1)-(b.priority==="top"?0:1)),dl=deadlinesFor(ds).filter(t=>!t.done);
-    const evn=its.filter(x=>x.src!=="routines").length,nt=tk.length+dl.length,parts=[evn&&`${evn} event${evn>1?"s":""}`,nt&&`${nt} task${nt>1?"s":""}`].filter(Boolean).join(" · ");
-    h+=`<section class="wd mag ${ds===td?"today":""} ${ds===S.hl?"selday":""}" id="mag-${ds}"><button class="wh" data-zday="${ds}"><span class="d">${fmt(d,{weekday:"short",day:1,month:"short"})}</span><span class="c">${ds===td?"Today":parts}</span></button>${dayList(ds,its,tk,dl)}</section>`}
+    const evn=its.filter(x=>x.src!=="routines").length,rtn=its.length-evn,nt=tk.length+dl.length,parts=[evn&&`${evn} event${evn>1?"s":""}`,rtn&&`${rtn} routine${rtn>1?"s":""}`,nt&&`${nt} task${nt>1?"s":""}`].filter(Boolean).join(" · ");
+    h+=`<section class="wd mag ${ds===td?"today":""} ${ds===S.hl?"selday":""}" id="mag-${ds}"><button class="wh" data-zday="${ds}"><span class="dn ${topKind(ds)?"k-"+topKind(ds):""}">${d.getDate()}</span><span class="d">${DAYL[i]}<small>${ds===td?"Today":parts||"Nothing planned"}</small></span><span class="kd">${[...new Set(its.map(x=>x.kind||"work"))].map(k=>`<i class="k-${k}"></i>`).join("")}</span></button>${dayList(ds,its,tk,dl)}</section>`}
   $("#view").innerHTML=h+"</div></div>";
   if(S.hl){const el=document.getElementById("mag-"+S.hl);S.hl=null;if(el)setTimeout(()=>el.scrollIntoView({behavior:reduced()?"auto":"smooth",block:"start"}),60)}
 }
@@ -473,7 +474,8 @@ function renderMonth(){
     h+=`<div class="mrow" role="button" tabindex="0" data-zweek="${ymd(m)}" aria-label="Week of ${shortD(ymd(m))}. Open the week">`;
     for(let i=0;i<7;i++){const d=addDays(m,i),ds=ymd(d),ev=itemsFor(ds).filter(x=>x.src!=="routines"),tk=tasksDue(ds).filter(t=>!t.done),dl=deadlinesFor(ds).filter(t=>!t.done),hol=ev.find(x=>/^Public holiday/i.test(x.title));
       const bars=[...ev.filter(x=>x!==hol).map(x=>`<i class="k-${x.kind||"work"}"></i>`),...dl.map(()=>`<i class="bdl"></i>`),...tk.map(()=>`<i class="btk"></i>`)];
-      h+=`<span class="mday ${inMonth(ds)?"":"out"} ${i>4?"we":""} ${ds===td?"today":""} ${hol?"hol":""}" data-zday-w="${ds}"><span class="fill" style="height:${bookedPct(ds)}%"></span><span class="num">${d.getDate()}</span><span class="bars">${bars.slice(0,3).join("")}</span>${bars.length>3?`<span class="bmore">+${bars.length-3}</span>`:""}</span>`}
+      const mins={};ev.forEach(x=>{const k=x.kind||"work";mins[k]=(mins[k]||0)+toMin(x.end)-toMin(x.start)});const top=Object.entries(mins).sort((a,b)=>b[1]-a[1])[0];
+      h+=`<span class="mday ${inMonth(ds)?"":"out"} ${i>4?"we":""} ${ds===td?"today":""} ${hol?"hol":""} ${top?"k-"+top[0]:""}" data-zday-w="${ds}"><span class="fill" style="height:${bookedPct(ds)}%"></span><span class="num">${d.getDate()}</span><span class="bars">${bars.slice(0,4).join("")}</span>${bars.length>4?`<span class="bmore">+${bars.length-4}</span>`:""}</span>`}
     h+=`</div>`}
   h+=`</div><div class="mleg" aria-hidden="true">${Object.entries(KINDS).map(([k,v])=>`<span class="k-${k}"><i></i>${v}</span>`).join("")}<span><i class="btk"></i>Task</span><span><i class="bdl"></i>Deadline</span><span><i class="fl"></i>How booked</span></div></div>`;
   const now=new Date(),lastDay=new Date(first.getFullYear(),first.getMonth()+1,0).getDate(),fromDay=(first.getMonth()===now.getMonth()&&first.getFullYear()===now.getFullYear())?now.getDate():1;
