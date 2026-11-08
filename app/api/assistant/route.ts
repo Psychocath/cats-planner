@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apply, propose } from "@/lib/assistant";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 // POST { text } returns proposed changes; POST { apply: [...] } saves the ones Cat kept.
 export async function POST(req: Request) {

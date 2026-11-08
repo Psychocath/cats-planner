@@ -101,21 +101,42 @@ async function gemini(body: unknown): Promise<Part[]> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("The Gemini key isn't set up yet. Add GEMINI_API_KEY in Vercel.");
   let last = "";
+  const started = Date.now();
   for (const model of MODELS) {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify(body),
-    });
+    const left = 50000 - (Date.now() - started);
+    if (left < 8000) break;
+    // Keep thinking short: this is a quick scheduling job, and long thinking ran past the time limit.
+    const thinking = /2\.5/.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "low" };
+    const b = body as Record<string, unknown>;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), Math.min(left, 25000));
+    let r: Response;
+    try {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ ...b, generationConfig: { ...(b.generationConfig as object), thinkingConfig: thinking } }),
+        signal: ctrl.signal,
+      });
+    } catch {
+      console.error(`Gemini ${model} timed out after ${Date.now() - started} ms`);
+      last = "timeout";
+      continue;
+    } finally {
+      clearTimeout(timer);
+    }
+    console.log(`Gemini ${model} answered ${r.status} after ${Date.now() - started} ms`);
     if (r.ok) {
       const j = await r.json();
       return (j.candidates?.[0]?.content?.parts as Part[]) || [];
     }
     last = await r.text().catch(() => "");
+    console.error(`Gemini ${model} error`, last.slice(0, 400));
     if (r.status === 429) throw new Error("Gemini's free limit is used up for now. Try again in a minute.");
-    if (r.status === 400 && /API key/i.test(last)) throw new Error("Gemini didn't accept the key. Check GEMINI_API_KEY in Vercel.");
-    if (r.status !== 404 && r.status !== 400) break; // only a missing model is worth trying the next one
+    if (/API key/i.test(last)) throw new Error("Gemini didn't accept the key. Check GEMINI_API_KEY in Vercel.");
+    if (r.status !== 404 && r.status !== 400) break; // only a missing model or an unsupported setting is worth trying the next one
   }
+  if (last === "timeout") throw new Error("Gemini took too long to answer. Try again, or say it in fewer words.");
   console.error("Gemini error", last.slice(0, 500));
   throw new Error("The planner assistant couldn't be reached. Try again in a moment.");
 }
@@ -123,10 +144,10 @@ async function gemini(body: unknown): Promise<Part[]> {
 export async function propose(text: string): Promise<{ reply: string; actions: Action[] }> {
   const now = localNow();
   const time = `${String(Math.floor(now.minute / 60)).padStart(2, "0")}:${String(now.minute % 60).padStart(2, "0")}`;
-  const [plan, tasks, d] = await Promise.all([call("get_plan", { date: now.date, days: 14 }), call("list_tasks", {}), loadData()]);
+  const [plan, tasks, d] = await Promise.all([call("get_plan", { date: now.date, days: 8 }), call("list_tasks", {}), loadData()]);
   const parts = await gemini({
     systemInstruction: { parts: [{ text: rules(now.date, time) }] },
-    contents: [{ role: "user", parts: [{ text: `My plan for the next 2 weeks:\n${JSON.stringify(plan)}\n\nMy open tasks:\n${JSON.stringify(tasks)}\n\nMy message: ${text}` }] }],
+    contents: [{ role: "user", parts: [{ text: `My plan for the next 8 days:\n${JSON.stringify(plan)}\n\nMy open tasks:\n${JSON.stringify(tasks)}\n\nMy message: ${text}` }] }],
     tools: [{ functionDeclarations: declarations() }],
     toolConfig: { functionCallingConfig: { mode: "AUTO" } },
     generationConfig: { temperature: 0.2 },
