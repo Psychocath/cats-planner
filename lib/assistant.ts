@@ -6,7 +6,8 @@ import { localNow } from "./schedule";
 
 // Tools Gemini may propose. Reading tools are left out: the plan is sent with the request instead.
 export const WRITE_TOOLS = ["add_block", "add_task", "add_routine", "update_item", "complete_task", "skip_routine", "delete_item"];
-const MODELS = [process.env.GEMINI_MODEL, "gemini-flash-latest", "gemini-2.5-flash"].filter(Boolean) as string[];
+// gemini-3.8-flash is the current free Flash model; Flash-Lite answers faster and is the backup.
+const MODELS = [process.env.GEMINI_MODEL, "gemini-3.8-flash", "gemini-flash-lite-latest"].filter(Boolean) as string[];
 const DAYN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -106,10 +107,10 @@ async function gemini(body: unknown): Promise<Part[]> {
     const left = 50000 - (Date.now() - started);
     if (left < 8000) break;
     // Keep thinking short: this is a quick scheduling job, and long thinking ran past the time limit.
-    const thinking = /2\.5/.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "low" };
+    const thinking = { thinkingLevel: "minimal" };
     const b = body as Record<string, unknown>;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), Math.min(left, 25000));
+    const timer = setTimeout(() => ctrl.abort(), Math.min(left - 1000, 28000));
     let r: Response;
     try {
       r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
