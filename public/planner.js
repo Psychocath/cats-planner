@@ -97,6 +97,8 @@ const IC={
  book:'<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 1 2-2h13"/>',
  music:'<path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
  plane:'<path d="M3 13l18-8-6 16-3-6z"/><path d="M12 15l9-10"/>',
+ pin:'<path d="M12 21s-6.5-5.7-6.5-11a6.5 6.5 0 0 1 13 0c0 5.3-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+ send:'<path d="M5 12h13M13 6l6 6-6 6"/>',
 };
 const PICK=["phone","video","mail","laptop","pen","camera","money","school","car","home","cart","food","coffee","tooth","medical","walk","bed","sparkle","gift","paw","book","music","plane","star"];
 const ic=(n,c="")=>`<svg class="ic ${c}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]||""}</svg>`;
@@ -183,10 +185,11 @@ function panel(key){
     rows.push(["Time",`${rec.start}–${rec.end} · ${durFmt(rec.start,rec.end)}`]);
     if(isR)rows.push(["Repeats",dayLabel(rec.days)+(rec.until?` · until ${fmt(fromYmd(rec.until),{day:1,month:"short"})} ${rec.until.slice(0,4)}`:"")]);
     rows.push(["Reminder",remindLabel(rec.remind)+(typeof rec.remind2==="number"?" and "+remindLabel(rec.remind2):"")]);
-    if(rec.buffer)rows.push(["Buffer",rec.buffer+" min after"])}
+    if(rec.buffer)rows.push(["Buffer",rec.buffer+" min after"]);
+    if(rec.location)rows.push(["Where",`<a class="maplink" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rec.location)}" target="_blank" rel="noopener">${esc(rec.location)}</a>`])}
   if(rec.notes&&S.noteFor!==key)rows.push(["Notes",esc(rec.notes).replace(/\n/g,"<br>")]);
   if(isR&&date&&rec.dayNotes?.[date]&&S.noteFor!==key)rows.push(["Note for this day",esc(rec.dayNotes[date]).replace(/\n/g,"<br>")]);
-  const ICN={For:"flag",Due:"cal",When:"cal",Time:"clock",Repeats:"repeat",Reminder:"bell",Buffer:"buffer",Notes:"note","Note for this day":"note",Priority:"star"};
+  const ICN={For:"flag",Due:"cal",When:"cal",Time:"clock",Repeats:"repeat",Reminder:"bell",Buffer:"buffer",Notes:"note","Note for this day":"note",Priority:"star",Where:"pin"};
   const steps=rec.steps||[],skipped=isR&&date&&(rec.skips||[]).includes(date);
   const stepsHtml=steps.length?`<div class="steps"><div class="sh"><span class="lb">Steps</span><span class="cnt">${steps.filter(x=>x.done).length} of ${steps.length}</span></div>${steps.map((x,i)=>`<label class="step ${x.done?"done":""}"><input type="checkbox" data-step="${i}" data-key="${key}" ${x.done?"checked":""}><span>${esc(x.text)}</span></label>`).join("")}</div>`:"";
   return`<div class="peek"><dl class="dl">${rows.map(([k,v])=>`<dt>${ic(ICN[k]||"note")}${k}</dt><dd>${v}</dd>`).join("")}</dl>${isT?track(rec):""}${S.noteFor===key?noteForm(key,isR?(rec.dayNotes?.[date]||""):(rec.notes||"")):""}${stepsHtml}
@@ -237,7 +240,7 @@ function renderNowbar(){
 /* ---------- shared rows: one look per item everywhere ---------- */
 function evRow(it,ds){
   const key=`${it.src}:${it.id}:${ds}`;
-  return `<button class="wi k-${it.kind||"work"} ${timing(it,ds)} ${S.flash===it.id?"grow":""}" ${openAttr(key)}><span class="tm">${it.start}–${it.end}</span>${ic(itemIcon(it,it.kind||"work"),"ki")}<span class="tt">${esc(it.title)}</span></button>${peekIf(key)}`;
+  return `<button class="wi k-${it.kind||"work"} ${timing(it,ds)} ${S.flash===it.id?"grow":""}" ${openAttr(key)}><span class="tm">${it.start}–${it.end}</span>${ic(itemIcon(it,it.kind||"work"),"ki")}<span class="tt">${esc(it.title)}${it.location?`<small class="wloc">${ic("pin")}${esc(it.location)}</small>`:""}</span></button>${peekIf(key)}`;
 }
 function taskItem(t,dl){
   const key=`tasks:${t.id}`;
@@ -331,6 +334,7 @@ function renderHome(){
   else work=`<div class="dpl"><span>Day off</span></div>`;
   let h=alertsStale()?`<button class="astale" data-settings>${ic("bell")}<span><b>Phone alerts have stopped</b>${esc(lastCheckTxt())} Tap to check.</span></button>`:"";
   h+=`<section class="card hhead">${ring(ds)}<div class="side"><div class="wx">${wx}</div>${work}${nowLines(ds)}</div></section>`;
+  h+=askBar();
   if(!S.alertsHere&&!alertsStale())h+=`<p class="mut small alerthint">Phone alerts are off on this device. <button class="wmore" data-settings>Turn them on</button></p>`;
   const sw=`<span class="dsw" role="group" aria-label="Show day">${[["today","Today"],["tomorrow","Tomorrow"]].map(([k,l])=>`<button type="button" data-homeday="${k}" aria-pressed="${v===k}">${l}</button>`).join("")}</span>`;
   const auto=!(store.get("homeDay",null)?.on===ds);
@@ -424,7 +428,7 @@ function timelineHtml(ds,work){
   items.forEach(it=>{if(!it.buffer)return;const bs=toMin(it.end),be=Math.min(bs+it.buffer,eH*60);if(be>bs)grid+=`<div class="buf" style="top:${y(bs)+1}px;height:${y(be)-y(bs)-2}px"><span>Buffer ${it.buffer} min</span></div>`});
   items.forEach(it=>{const s=Math.max(toMin(it.start),sH*60),e=Math.min(Math.max(toMin(it.end),s+1),eH*60);if(e<=s)return;
     const w=100/it._lanes,ht=y(e)-y(s)-2,short=ht<60,isR=it.src==="routines",key=`${it.src}:${it.id}:${ds}`,done=itemDone(it,ds),note=itemNote(it,ds),cur=isToday&&toMin(it.start)<=nm&&toMin(it.end)>nm&&!done;
-    grid+=`<div class="blk k-${it.kind||"work"} ${isR?"rt":""} ${short?"short":""} ${done?"done":timing(it,ds)} ${cur?"cur":""} ${S.flash===it.id?"grow":""}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><button class="bm" data-dock="${key}"><b>${ic(itemIcon(it,isR?"repeat":(it.kind||"work")),"bi")}${esc(it.title)}</b><span class="tm">${it.start}${short?"":"–"+it.end}</span>${note&&ht>=76?`<span class="bn">${ic("note")}${esc(note)}</span>`:""}</button><span class="ba"><button type="button" class="hbtn ${note?"has":""}" data-hnote="${key}" aria-label="${note?"Edit note":"Add a note"}">${ic("note")}</button><button class="check" data-hdone="${key}" aria-pressed="${done}" aria-label="${done?"Mark not done":"Mark done"}"><i>${ic("tick")}</i></button></span></div>`});
+    grid+=`<div class="blk k-${it.kind||"work"} ${isR?"rt":""} ${short?"short":""} ${done?"done":timing(it,ds)} ${cur?"cur":""} ${S.flash===it.id?"grow":""}" style="top:${y(s)+1}px;height:${ht}px;left:calc(${w*it._lane}% + 4px);width:calc(${w}% - 8px)"><button class="bm" data-dock="${key}"><b>${ic(itemIcon(it,isR?"repeat":(it.kind||"work")),"bi")}${esc(it.title)}</b><span class="tm">${it.start}${short?"":"–"+it.end}</span>${it.location&&ht>=60?`<span class="bloc">${ic("pin")}${esc(it.location)}</span>`:""}${note&&ht>=76?`<span class="bn">${ic("note")}${esc(note)}</span>`:""}</button><span class="ba"><button type="button" class="hbtn ${note?"has":""}" data-hnote="${key}" aria-label="${note?"Edit note":"Add a note"}">${ic("note")}</button><button class="check" data-hdone="${key}" aria-pressed="${done}" aria-label="${done?"Mark not done":"Mark done"}"><i>${ic("tick")}</i></button></span></div>`});
   if(isToday&&nm>=sH*60&&nm<=eH*60)grid+=`<div class="now" style="top:${y(nm)}px"></div>`;
   const fw=freeWork(ds);
   return `<section class="sec tls"><div class="sech"><h2>${ic("clock")}Timeline</h2><span class="cnt">${work?(fw?inFmt(fw)+" free in work day":"Work day fully booked"):"Day off"}</span></div><div class="tl" style="height:${height}px"><div class="rail">${rail}</div><div class="grid">${grid}</div></div></section>`;
@@ -620,7 +624,7 @@ function openSheet(type,rec,preset){
   let more="",moreNote="",moreOpen=false;
   if(type==="blocks"){
     const st=rec.start||preset.start||"09:00",en=rec.end||preset.end||hm(Math.min(toMin(st)+60,23*60+45));
-    main+=`<div class="f"><label for="fDate">Day</label><input id="fDate" type="date" value="${rec.date||preset.date||ymd(S.cur)}"></div><div class="two">${tp("fStart",st,"Start")}${tp("fEnd",en,"End")}</div>`+kindOpts+iconOpts;
+    main+=`<div class="f"><label for="fDate">Day</label><input id="fDate" type="date" value="${rec.date||preset.date||ymd(S.cur)}"></div><div class="two">${tp("fStart",st,"Start")}${tp("fEnd",en,"End")}</div><div class="f"><label for="fLoc">Where <span class="opt">(optional)</span></label><input id="fLoc" value="${esc(rec.location||preset.location||"")}" placeholder="Address or place" autocomplete="off"></div>`+kindOpts+iconOpts;
   }else if(type==="tasks"){
     const pri=(rec.priority||preset.priority)==="top"?"top":"normal";
     main+=`<div class="f"><label for="fDate">Do by <span class="opt">(optional)</span></label><input id="fDate" type="date" value="${rec.date||preset.date||""}"></div><div class="f"><span class="lb">Priority</span>${optsHtml("fPri",[["top","Top 3"],["normal","Normal"]],pri,"p")}</div>`;
@@ -628,7 +632,7 @@ function openSheet(type,rec,preset){
     moreNote="Event date, minutes, icon, steps";moreOpen=!!(rec.for||rec.mins||rec.icon||(rec.steps||[]).length);
   }else{
     const days=rec.days||[1,2,3,4,5],st=rec.start||"08:00",en=rec.end||"08:30";
-    main+=`<div class="two">${tp("fStart",st,"Start")}${tp("fEnd",en,"End")}</div><div class="f"><span class="lb">Repeats on</span><div class="opts" id="fDays">${DAYN.map((n,i)=>`<button type="button" data-d="${i+1}" aria-pressed="${days.includes(i+1)}">${n}</button>`).join("")}</div></div>`+kindOpts+iconOpts;
+    main+=`<div class="two">${tp("fStart",st,"Start")}${tp("fEnd",en,"End")}</div><div class="f"><span class="lb">Repeats on</span><div class="opts" id="fDays">${DAYN.map((n,i)=>`<button type="button" data-d="${i+1}" aria-pressed="${days.includes(i+1)}">${n}</button>`).join("")}</div></div><div class="f"><label for="fLoc">Where <span class="opt">(optional)</span></label><input id="fLoc" value="${esc(rec.location||preset.location||"")}" placeholder="Address or place" autocomplete="off"></div>`+kindOpts+iconOpts;
     more+=`<div class="f"><label for="fUntil">Repeats until</label><input id="fUntil" type="date" value="${rec.until||""}"></div>`;
     moreOpen=!!rec.until;
   }
@@ -669,10 +673,44 @@ function openSheet(type,rec,preset){
     if(type!=="tasks"){const rv=picked("fRem","r","d");if(rv==="d")delete data.remind;else data.remind=+rv;
       const r2=picked("fRem2","r","n");if(r2==="n")delete data.remind2;else data.remind2=+r2;
       const bf=+picked("fBuf","b",0);if(bf)data.buffer=bf;else delete data.buffer;
-      const nt=$("#fNotes").value.trim();if(nt)data.notes=nt;else delete data.notes}
+      const nt=$("#fNotes").value.trim();if(nt)data.notes=nt;else delete data.notes;
+      const lc=$("#fLoc").value.trim();if(lc)data.location=lc;else delete data.location}
     if(type!=="routines"){if($("#fStepIn").value.trim())addStep();const st=[...form.querySelectorAll("#fSteps .srow input")].map(i=>({text:i.value.trim(),done:i.dataset.done==="1"})).filter(x=>x.text);if(st.length)data.steps=st;else delete data.steps}
     delete data.example;save(type,rec.id||uid(),data);closeSheet();toast(isNew?"Added":"Saved")};
 }
+
+/* ---------- tell the planner (Gemini) ---------- */
+function askBar(){return `<form class="ask" id="ask" autocomplete="off"><span class="askic">${ic("sparkle")}</span><input id="askIn" value="${esc(S.askDraft||"")}" placeholder="Tell the planner, e.g. dentist Thu 10:00" enterkeyhint="send" aria-label="Tell the planner what to change"><button type="submit" aria-label="Send">${ic("send")}</button></form>`}
+async function askApi(body){
+  const r=await fetch("/api/assistant",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+  if(r.status===401){location.href="/login";throw new Error("signed out")}
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"The planner assistant couldn't be reached. Try again.");return j;
+}
+const ACT_IC={add_block:"clock",add_task:"task",add_routine:"repeat",update_item:"pen",complete_task:"tick",skip_routine:"repeat",delete_item:"x"};
+function askSheet(text,inner){sheet("Tell the planner",`<div class="in askv"><h3>${ic("sparkle")}Tell the planner</h3><p class="askq">${esc(text)}</p>${inner}</div>`)}
+async function askPlanner(text){
+  if(!navigator.onLine){toast("You're offline. Try again once you're connected.");return}
+  askSheet(text,`<p class="askwait"><span class="dots"><i></i><i></i><i></i></span>Reading your plan</p><div class="acts"><button class="ghost" type="button" id="askX" style="flex:1">Cancel</button></div>`);
+  let gone=false;$("#askX").onclick=()=>{gone=true;closeSheet()};
+  let res;try{res=await askApi({text})}catch(e){if(gone)return;askSheet(text,`<p class="err">${esc(e.message)}</p><div class="acts"><button class="primary" type="button" id="askRetry">Try again</button><button class="ghost" type="button" id="askX">Close</button></div>`);$("#askRetry").onclick=()=>askPlanner(text);$("#askX").onclick=closeSheet;return}
+  if(gone||!$(".askv"))return;
+  const acts=res.actions||[];
+  const list=acts.map((a,i)=>`<label class="acard ${a.danger?"danger":""}"><input type="checkbox" data-ai="${i}" checked><span class="aic">${ic(ACT_IC[a.name]||"note")}</span><span class="atx"><b>${esc(a.summary)}</b>${a.detail?`<small>${esc(a.detail)}</small>`:""}</span></label>`).join("");
+  askSheet(text,`<p class="areply">${esc(res.reply||"")}</p>${acts.length?`<div class="alist">${list}</div>`:""}
+    <div class="acts sticky">${acts.length?`<button class="primary" type="button" id="askGo">${acts.length===1?"Save this change":`Save ${acts.length} changes`}</button>`:""}<button class="ghost" type="button" id="askEdit">Reword</button><button class="ghost" type="button" id="askX">Cancel</button></div>`);
+  $("#askX").onclick=closeSheet;
+  $("#askEdit").onclick=()=>{closeSheet();S.askDraft=text;render();setTimeout(()=>{const i=$("#askIn");if(i){i.focus();i.select()}},40)};
+  const go=$("#askGo");if(!go)return;
+  const count=()=>{const n=document.querySelectorAll(".alist input:checked").length;go.disabled=!n;go.textContent=n===1?"Save this change":n?`Save ${n} changes`:"Nothing ticked"};
+  document.querySelectorAll(".alist input").forEach(c=>c.onchange=count);
+  go.onclick=async()=>{const keep=acts.filter((_,i)=>document.querySelector(`.alist input[data-ai="${i}"]`).checked).map(a=>({name:a.name,args:a.args}));
+    go.disabled=true;go.textContent="Saving";
+    try{const r=await askApi({apply:keep});closeSheet();S.askDraft="";await load();
+      const bad=(r.results||[]).filter(x=>!x.ok);toast(bad.length?`${keep.length-bad.length} saved, ${bad.length} couldn't be: ${bad[0].error}`:keep.length===1?"Planner updated":`${keep.length} changes saved`)}
+    catch(e){go.disabled=false;count();toast(e.message)}};
+}
+document.addEventListener("submit",e=>{if(e.target.id!=="ask")return;e.preventDefault();const i=$("#askIn"),t=i.value.trim();if(!t){i.focus();return}S.askDraft=t;i.blur();askPlanner(t)});
+document.addEventListener("input",e=>{if(e.target.id==="askIn")S.askDraft=e.target.value});
 
 /* ---------- focus timer ---------- */
 let focusT=null,wake=null;
@@ -802,7 +840,7 @@ document.addEventListener("submit",e=>{if(e.target.id!=="quick")return;e.prevent
 
 /* every 30 seconds: keep times live, without moving the page */
 setInterval(()=>{applyTint();if($("#sheetRoot").innerHTML||$("#focus"))return;
-  if(document.activeElement?.id==="hNoteIn")return;
+  if(["hNoteIn","askIn"].includes(document.activeElement?.id))return;
   if(S.view==="home"||(S.view==="cal"&&(S.zoom==="week"||(S.zoom==="day"&&ymd(S.cur)===todayStr()))))render();else renderNowbar()},30000);
 
 /* ---------- store: cached data shows at once, fresh data follows ---------- */
@@ -819,7 +857,7 @@ async function load(){
     const d=await r.json();applyData(d);
     S.publicKey=d.alerts.publicKey;S.devices=d.alerts.devices;S.lastCheck=d.alerts.lastCheck||null;S.connector=d.connectorUrl;
     cacheData();status("");
-    if(!$("#sheetRoot").innerHTML&&!["quickIn","hNoteIn"].includes(document.activeElement?.id))render();
+    if(!$("#sheetRoot").innerHTML&&!["quickIn","hNoteIn","askIn"].includes(document.activeElement?.id))render();
   }catch(_){status(S.cached?"Showing your last saved plan. Changes will sync once you're back online.":"Can't reach your planner right now. Check your connection; changes will show once it's back.")}
 }
 let myVersion=null;

@@ -18,7 +18,7 @@ const addDays = (date: string, n: number) => {
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 };
 
-class ToolError extends Error {}
+export class ToolError extends Error {}
 const need = (ok: unknown, msg: string) => {
   if (!ok) throw new ToolError(msg);
 };
@@ -39,6 +39,7 @@ const extras = (a: Record<string, unknown>) => {
   if (typeof a.remind2 === "number") o.remind2 = Math.max(0, Math.min(10080, Math.round(a.remind2)));
   if (typeof a.buffer === "number" && a.buffer > 0) o.buffer = Math.min(120, Math.round(a.buffer));
   if (a.notes) o.notes = String(a.notes).slice(0, 2000);
+  if (a.location) o.location = String(a.location).trim().slice(0, 200);
   const st = toSteps(a.steps);
   if (st) o.steps = st;
   return o;
@@ -46,7 +47,7 @@ const extras = (a: Record<string, unknown>) => {
 const kindOf = (k: unknown) => (KINDS.includes(String(k)) ? String(k) : "work");
 
 const str = (description: string) => ({ type: "string", description });
-const TOOLS = [
+export const TOOLS = [
   {
     name: "get_plan",
     description:
@@ -79,6 +80,7 @@ const TOOLS = [
         remind: { type: "integer", minimum: -1, maximum: 10080, description: "Minutes before the start to send the phone alert. -1 for none, 0 at start. Leave out to use the default." },
         remind2: { type: "integer", minimum: 0, maximum: 10080, description: "Optional second alert, minutes before the start." },
         buffer: { type: "integer", minimum: 0, maximum: 120, description: "Minutes of buffer kept free after it ends (optional)." },
+        location: str("Where it happens: an address or place name (optional)."),
         notes: str("Extra details (optional)."),
         steps: { type: "array", items: { type: "string" }, description: "Small steps to break it into (optional)." },
       },
@@ -115,6 +117,7 @@ const TOOLS = [
         remind: { type: "integer", minimum: -1, maximum: 10080, description: "Minutes before the start to send the phone alert. -1 for none, 0 at start. Leave out to use the default." },
         remind2: { type: "integer", minimum: 0, maximum: 10080, description: "Optional second alert, minutes before the start." },
         buffer: { type: "integer", minimum: 0, maximum: 120, description: "Minutes of buffer kept free after it ends (optional)." },
+        location: str("Where it happens: an address or place name (optional)."),
         notes: str("Extra details (optional)."),
       },
     },
@@ -128,7 +131,7 @@ const TOOLS = [
       properties: {
         collection: { type: "string", enum: COLS },
         id: str("Item id from get_plan or list_tasks."),
-        fields: { type: "object", description: "e.g. {title, date, for (tasks: event date YYYY-MM-DD), start, end, kind, notes, until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
+        fields: { type: "object", description: "e.g. {title, date, for (tasks: event date YYYY-MM-DD), start, end, kind, notes, location (blocks and routines; null to clear), until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
       },
     },
   },
@@ -177,7 +180,7 @@ function freeWork(d: Data, date: string) {
 
 const pick = (i: Item, keys: string[]) => Object.fromEntries(keys.filter((k) => i[k] !== undefined && i[k] !== null).map((k) => [k, i[k]]));
 
-async function call(name: string, a: Record<string, unknown>) {
+export async function call(name: string, a: Record<string, unknown>) {
   const now = localNow();
   switch (name) {
     case "get_plan": {
@@ -188,10 +191,10 @@ async function call(name: string, a: Record<string, unknown>) {
       const days = [];
       for (let k = 0; k < n; k++) {
         const date = addDays(start, k), wd = wdOf(date);
-        const blocks = d.blocks.filter((b) => b.date === date).map((b) => ({ ...pick(b, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "notes", "steps"]), type: "block" }));
+        const blocks = d.blocks.filter((b) => b.date === date).map((b) => ({ ...pick(b, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "location", "notes", "steps"]), type: "block" }));
         const routines = d.routines
           .filter((r) => ((r.days as number[]) || []).includes(wd) && !((r.skips as string[]) || []).includes(date) && (!r.from || date >= String(r.from)) && (!r.until || date <= String(r.until)))
-          .map((r) => ({ ...pick(r, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "notes", "steps", "until"]), type: "routine" }));
+          .map((r) => ({ ...pick(r, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "location", "notes", "steps", "until"]), type: "routine" }));
         const tasks = d.tasks.filter((t) => t.date === date || t.for === date).map((t) => pick(t, ["id", "title", "date", "for", "priority", "mins", "actual", "done", "steps"]));
         days.push({
           date,
@@ -254,6 +257,8 @@ async function call(name: string, a: Record<string, unknown>) {
         if (next.date) need(DATE.test(String(next.date)), "Use dates like 2026-11-06.");
         if (f.kind !== undefined) next.kind = kindOf(f.kind);
         for (const k of ["remind2", "buffer"]) if (f[k] === null || f[k] === 0 && k === "buffer") delete next[k];
+        if (f.location === null || f.location === "") delete next.location;
+        else if (f.location !== undefined) next.location = String(f.location).trim().slice(0, 200);
         if (f.for === null || f.for === "") delete next.for;
         else if (f.for !== undefined) need(DATE.test(String(f.for)), "Use dates like 2026-12-04 for 'for'.");
         if (f.until === null || f.until === "") delete next.until;

@@ -719,3 +719,29 @@ div.nl{cursor:default}
 .daterow:has(#prev:not([hidden])) h1 small{font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .daterow #prev{border-top-right-radius:4px;border-bottom-right-radius:4px;width:36px;margin-right:-4px}
 .daterow #next{border-top-left-radius:4px;border-bottom-left-radius:4px;width:36px}
+
+/* ---------- tell the planner ---------- */
+.ask{display:flex;align-items:center;gap:8px;margin:12px 0 4px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px 4px 4px 12px;box-shadow:0 1px 0 rgba(0,0,0,.03)}
+.ask:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.ask .askic{color:var(--accent);display:grid;place-items:center;flex:none}
+.ask input{flex:1;min-width:0;border:0;background:transparent;min-height:44px;font:inherit;color:var(--ink);padding:0;outline:none;box-shadow:none}
+.ask button{flex:none;width:44px;height:44px;border:0;border-radius:11px;background:var(--accent);background-image:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accent-ink);display:grid;place-items:center}
+.askv h3{display:flex;align-items:center;gap:8px}.askv h3 .ic{color:var(--accent)}
+.askq{margin:0;padding:10px 12px;border-radius:12px;background:var(--sunk);color:var(--ink);font-size:.95rem}
+.areply{margin:0;font-size:1rem}
+.askwait{display:flex;align-items:center;gap:10px;margin:6px 0;color:var(--muted)}
+.dots{display:inline-flex;gap:4px}.dots i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:askdot 1s infinite ease-in-out}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes askdot{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.dots i{animation:none;opacity:.6}}
+.alist{display:grid;gap:8px}
+.acard{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer}
+.acard input{width:22px;height:22px;accent-color:var(--accent);margin:0}
+.acard .aic{width:34px;height:34px;border-radius:10px;background:var(--sunk);color:var(--accent);display:grid;place-items:center}
+.acard .atx{display:grid;gap:2px;min-width:0}.acard small{color:var(--muted);font-size:.85rem}
+.acard:has(input:not(:checked)){opacity:.55}
+.acard.danger .aic{color:var(--now)}
+/* ---------- where ---------- */
+.wloc,.bloc{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:.8rem;font-weight:400;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wloc .ic,.bloc .ic{width:.95em;height:.95em;flex:none}
+.maplink{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
