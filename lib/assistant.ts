@@ -25,6 +25,8 @@ const FIELD_PROPS = {
   priority: { type: "string", enum: ["top", "normal"] },
   mins: { type: "integer" },
   for: { type: "string", description: "Event date a task prepares for, YYYY-MM-DD" },
+  deadline: { type: "string", description: "Tasks: last day it can be done, YYYY-MM-DD" },
+  waiting: { type: "string", description: "Tasks: what has to happen first. Empty string to clear." },
   days: { type: "array", items: { type: "integer" }, description: "Routines: 1=Mon … 7=Sun" },
   until: { type: "string", description: "Routines: last date YYYY-MM-DD" },
   remind: { type: "integer", description: "Minutes before the start. -1 for none." },
@@ -53,7 +55,7 @@ function describe(name: string, a: Record<string, unknown>, find: (col: string, 
     case "add_block":
       return { ...base, summary: `Add ${a.title}`, detail: join(dLabel(a.date), span(a), a.location) };
     case "add_task":
-      return { ...base, summary: `Add task: ${a.title}`, detail: join(a.date ? `Do by ${dLabel(a.date)}` : "Inbox", a.priority === "top" && "Top 3", a.for && `For ${dLabel(a.for)}`) };
+      return { ...base, summary: `Add task: ${a.title}`, detail: join(a.date ? `Planned ${dLabel(a.date)}` : "Inbox", a.deadline && `Deadline ${dLabel(a.deadline)}`, a.priority === "top" && "Priority", a.for && `For ${dLabel(a.for)}`) };
     case "add_routine":
       return { ...base, summary: `Add routine: ${a.title}`, detail: join(((a.days as number[]) || []).map((n) => DAYN[n - 1]).join(" "), span(a), a.location) };
     case "update_item": {

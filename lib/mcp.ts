@@ -88,13 +88,15 @@ export const TOOLS = [
   },
   {
     name: "add_task",
-    description: "Add a task. Leave date empty to put it in the Inbox. priority 'top' puts it in that day's Top 3 (max 3 per day).",
+    description: "Add a task. date is the day Cat plans to do it; leave it empty to put the task in the Inbox. deadline is the last day it can be done. priority 'top' makes it one of that day's priorities (max 3 per day).",
     inputSchema: {
       type: "object",
       required: ["title"],
       properties: {
         title: str("The task."),
-        date: str("Due date, YYYY-MM-DD (optional)."),
+        date: str("Planned day: the day Cat means to do it, YYYY-MM-DD (optional)."),
+        deadline: str("The last day it can be done, YYYY-MM-DD (optional). Separate from the planned day."),
+        waiting: str("What has to happen first, if the task is blocked (optional)."),
         priority: { type: "string", enum: ["top", "normal"] },
         mins: { type: "integer", minimum: 5, description: "Estimated minutes (optional)." },
         for: str("The event date this task is preparation for, YYYY-MM-DD (optional). Shows as a deadline on that day."),
@@ -131,7 +133,7 @@ export const TOOLS = [
       properties: {
         collection: { type: "string", enum: COLS },
         id: str("Item id from get_plan or list_tasks."),
-        fields: { type: "object", description: "e.g. {title, date, for (tasks: event date YYYY-MM-DD), start, end, kind, notes, location (blocks and routines; null to clear), until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
+        fields: { type: "object", description: "e.g. {title, date (tasks: planned day), deadline (tasks: last possible day, null to clear), waiting (tasks: what it is blocked on, null to clear), for (tasks: event date YYYY-MM-DD), start, end, kind, notes, location (blocks and routines; null to clear), until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
       },
     },
   },
@@ -195,7 +197,7 @@ export async function call(name: string, a: Record<string, unknown>) {
         const routines = d.routines
           .filter((r) => ((r.days as number[]) || []).includes(wd) && !((r.skips as string[]) || []).includes(date) && (!r.from || date >= String(r.from)) && (!r.until || date <= String(r.until)))
           .map((r) => ({ ...pick(r, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "location", "notes", "steps", "until"]), type: "routine" }));
-        const tasks = d.tasks.filter((t) => t.date === date || t.for === date).map((t) => pick(t, ["id", "title", "date", "for", "priority", "mins", "actual", "done", "steps"]));
+        const tasks = d.tasks.filter((t) => t.date === date || t.for === date || t.deadline === date).map((t) => pick(t, ["id", "title", "date", "deadline", "for", "waiting", "priority", "mins", "actual", "done", "steps"]));
         days.push({
           date,
           weekday: DAYN[wd - 1],
@@ -208,7 +210,7 @@ export async function call(name: string, a: Record<string, unknown>) {
     }
     case "list_tasks": {
       const d = await loadData();
-      return d.tasks.filter((t) => a.include_done || !t.done).map((t) => pick(t, ["id", "title", "date", "for", "priority", "mins", "actual", "done", "steps"]));
+      return d.tasks.filter((t) => a.include_done || !t.done).map((t) => pick(t, ["id", "title", "date", "deadline", "for", "waiting", "priority", "mins", "actual", "done", "steps"]));
     }
     case "add_block": {
       need(String(a.title || "").trim(), "Give the block a title.");
@@ -227,6 +229,9 @@ export async function call(name: string, a: Record<string, unknown>) {
       const st = toSteps(a.steps);
       if (st) rec.steps = st;
       if (a.for) { need(DATE.test(String(a.for)), "Use dates like 2026-12-04 for 'for'."); rec.for = String(a.for); }
+      if (a.deadline) { need(DATE.test(String(a.deadline)), "Use dates like 2026-12-04 for deadline."); rec.deadline = String(a.deadline); }
+      if (a.waiting) rec.waiting = String(a.waiting).trim().slice(0, 200);
+      if (!date) rec.inbox = true;
       await updateData((d) => {
         if (priority === "top" && date) {
           need(d.tasks.filter((t) => t.date === date && t.priority === "top" && !t.done).length < 3, "That day already has 3 Top tasks.");
@@ -261,6 +266,10 @@ export async function call(name: string, a: Record<string, unknown>) {
         else if (f.location !== undefined) next.location = String(f.location).trim().slice(0, 200);
         if (f.for === null || f.for === "") delete next.for;
         else if (f.for !== undefined) need(DATE.test(String(f.for)), "Use dates like 2026-12-04 for 'for'.");
+        if (f.deadline === null || f.deadline === "") delete next.deadline;
+        else if (f.deadline !== undefined) need(DATE.test(String(f.deadline)), "Use dates like 2026-12-04 for deadline.");
+        if (f.waiting === null || f.waiting === "") delete next.waiting;
+        if (col === "tasks" && f.date) next.inbox = false;
         if (f.until === null || f.until === "") delete next.until;
         else if (f.until !== undefined) need(DATE.test(String(f.until)), "Use dates like 2026-12-31 for until.");
         if (f.steps !== undefined) { const st = toSteps(f.steps); if (st && st.length) next.steps = st; else delete next.steps; }
