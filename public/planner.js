@@ -350,10 +350,9 @@ function renderHome(){
 /* 2. quick add: type and go; details can wait */
 function quickAddHtml(){
   const v=S.qa||"";
-  return `<section class="qadd-w"><form class="qadd" id="qadd" autocomplete="off"><label for="qaIn" class="qai">${ic("cal")}</label><input id="qaIn" value="${esc(v)}" placeholder="Add a task, event or thought…" aria-label="Add a task, event or thought" enterkeyhint="done"><button type="submit" class="qgo" aria-label="Add">${ic("plus")}</button></form>
-  <div class="qopts" id="qopts" ${v.trim()?"":"hidden"} role="group" aria-label="How to add it"><button type="button" data-qadd="inbox">${ic("task")}Add to Inbox</button><button type="button" data-qadd="ai">${ic("sparkle")}Plan it for me</button><button type="button" data-qadd="form">${ic("pen")}Add details</button></div></section>`;
+  return `<section class="qadd-w"><form class="qadd" id="qadd" autocomplete="off"><label for="qaIn" class="qai">${ic("cal")}</label><input id="qaIn" value="${esc(v)}" placeholder="Add a task, event or thought…" aria-label="Add a task, event or thought" enterkeyhint="done"><button type="submit" class="qgo" aria-label="Send to the planner assistant">${ic("plus")}</button></form>
+  <div class="qopts" id="qopts" ${v.trim()?"":"hidden"} role="group" aria-label="How to add it"><span class="qhint">${ic("sparkle")}Gemini plans it when you press +</span><button type="button" data-qadd="inbox">${ic("task")}Just add to Inbox</button><button type="button" data-qadd="form">${ic("pen")}Add details myself</button></div></section>`;
 }
-const looksTimed=t=>/\b(\d{1,2}[:h.]\d{2}|\d{1,2}\s?(am|pm)|mon(day)?|tue(s|sday)?|wed(nesday)?|thu(rs|rsday)?|fri(day)?|sat(urday)?|sun(day)?|today|tonight|tomorrow|next week|\d{1,2}\s(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*)\b/i.test(t);
 function quickInbox(t){const id=uid();save("tasks",id,{title:t,date:null,priority:"normal",mins:null,done:false,inbox:true,createdAt:Date.now()});S.qa="";render();toast("Added to Inbox",()=>remove("tasks",id));setTimeout(()=>{const n=$("#qaIn");if(n)n.focus({preventScroll:true})},30)}
 
 /* 3. compact week strip */
@@ -854,7 +853,7 @@ async function askPlanner(text){
   if(!navigator.onLine){toast("You're offline. Try again once you're connected.");return}
   askSheet(text,`<p class="askwait"><span class="dots"><i></i><i></i><i></i></span>Reading your plan</p><div class="acts"><button class="ghost" type="button" id="askX" style="flex:1">Cancel</button></div>`);
   let gone=false;$("#askX").onclick=()=>{gone=true;closeSheet()};
-  let res;try{res=await askApi({text})}catch(e){if(gone)return;askSheet(text,`<p class="err">${esc(e.message)}</p><div class="acts"><button class="primary" type="button" id="askRetry">Try again</button><button class="ghost" type="button" id="askX">Close</button></div>`);$("#askRetry").onclick=()=>askPlanner(text);$("#askX").onclick=closeSheet;return}
+  let res;try{res=await askApi({text})}catch(e){if(gone)return;askSheet(text,`<p class="err">${esc(e.message)}</p><div class="acts"><button class="primary" type="button" id="askRetry">Try again</button><button class="ghost" type="button" id="askInbox">Add to Inbox instead</button><button class="ghost" type="button" id="askX">Close</button></div>`);$("#askRetry").onclick=()=>askPlanner(text);$("#askInbox").onclick=()=>{hideSheet();S.returnDock=null;quickInbox(text);release()};$("#askX").onclick=closeSheet;return}
   if(gone||!$(".askv"))return;
   const acts=res.actions||[];
   const list=acts.map((a,i)=>`<label class="acard ${a.danger?"danger":""}"><input type="checkbox" data-ai="${i}" checked><span class="aic">${ic(ACT_IC[a.name]||"note")}</span><span class="atx"><b>${esc(a.summary)}</b>${a.detail?`<small>${esc(a.detail)}</small>`:""}</span></label>`).join("");
@@ -931,7 +930,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("submit",e=>{
   const f=e.target;
-  if(f.id==="qadd"){e.preventDefault();const t=(S.qa||"").trim();if(!t){openAdd(homeSel());return}if(looksTimed(t)){$("#qaIn").blur();askPlanner(t)}else quickInbox(t);return}
+  if(f.id==="qadd"){e.preventDefault();const t=(S.qa||"").trim();if(!t){openAdd(homeSel());return}$("#qaIn").blur();askPlanner(t);return}
   if(f.dataset.addstep){e.preventDefault();const i=$("#dStepIn"),v=i.value.trim();if(!v)return;const r=resolve(f.dataset.addstep);if(!r)return;save(r.col,r.rec.id,{...strip(r.rec),steps:[...(r.rec.steps||[]),{text:v,done:false}]});setTimeout(()=>{const n=$("#dStepIn");if(n)n.focus({preventScroll:true})},30);return}
 });
 document.addEventListener("click",e=>{

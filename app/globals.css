@@ -924,3 +924,5 @@ body.dockopen .fab,body.sheetopen .fab{display:none}
 .daterow h1:has(.dlink){white-space:normal;font-size:clamp(1.2rem,5.6vw,1.45rem)}
 .dacts .wide{white-space:nowrap;padding:0 10px;font-size:.95rem}
 .tdbtn{white-space:nowrap}
+.qopts .qhint{display:inline-flex;align-items:center;gap:6px;flex-basis:100%;font-size:.84rem;color:var(--muted)}
+.qopts .qhint .ic{width:1em;height:1em;color:var(--accent)}
