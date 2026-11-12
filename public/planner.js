@@ -343,7 +343,7 @@ const grpSet=(k,v)=>{S.grp[k]=v;store.set("grp",S.grp)};
 
 function renderHome(){
   const ds=homeSel();
-  $("#view").innerHTML=`<div class="homev">${quickAddHtml()}${weekStripHtml(ds)}${attentionHtml(ds)}${prioritiesHtml(ds)}${agendaHtml(ds)}${otherTasksHtml(ds)}${comingUpHtml(ds)}</div>`;
+  $("#view").innerHTML=`<div class="homev">${quickAddHtml()}${homeMonthHtml(ds)}${attentionHtml(ds)}${prioritiesHtml(ds)}${agendaHtml(ds)}${otherTasksHtml(ds)}${comingUpHtml(ds)}</div>`;
   loadWeather();
 }
 
@@ -355,7 +355,22 @@ function quickAddHtml(){
 }
 function quickInbox(t){const id=uid();save("tasks",id,{title:t,date:null,priority:"normal",mins:null,done:false,inbox:true,createdAt:Date.now()});S.qa="";render();toast("Added to Inbox",()=>remove("tasks",id));setTimeout(()=>{const n=$("#qaIn");if(n)n.focus({preventScroll:true})},30)}
 
-/* 3. compact week strip */
+/* 3. the full month on Home: every day in front of you, tap one to plan it below */
+function homeMonthHtml(ds){
+  const sel=fromYmd(ds),first=new Date(sel.getFullYear(),sel.getMonth(),1),start=monday(first),td=todayStr();
+  let rows="";
+  for(let w=0;w<6;w++){const m=addDays(start,w*7);if(w>0&&m.getMonth()!==first.getMonth())break;
+    rows+=`<div class="hmrow">`;
+    for(let i=0;i<7;i++){const d=addDays(m,i),x=ymd(d),inM=d.getMonth()===first.getMonth(),ev=itemsFor(x).filter(y=>y.src!=="routines"),tk=tasksDue(x).filter(t=>!t.done),dl=deadlinesFor(x).filter(t=>!t.done),hol=ev.find(y=>/^Public holiday/i.test(y.title));
+      const bars=[...ev.filter(y=>y!==hol).map(y=>`<i class="k-${y.kind||"work"}"></i>`),...dl.map(()=>`<i class="bdl"></i>`),...tk.map(()=>`<i class="btk"></i>`)];
+      const mins={};ev.forEach(y=>{const k=y.kind||"work";mins[k]=(mins[k]||0)+toMin(y.end)-toMin(y.start)});const top=Object.entries(mins).sort((a,b)=>b[1]-a[1])[0];
+      const nev=ev.length,ntk=tk.length+dl.length,lab=`${longD(x)}${x===td?", today":""}${nev||ntk?`: ${nev?nev+" event"+(nev>1?"s":""):""}${nev&&ntk?", ":""}${ntk?ntk+" task"+(ntk>1?"s":""):""}`:": nothing planned"}`;
+      rows+=`<button type="button" class="mday ${inM?"":"out"} ${i>4?"we":""} ${x===td?"today":""} ${x===ds?"sel":""} ${hol?"hol":""} ${top?"k-"+top[0]:""}" data-sel="${x}" aria-pressed="${x===ds}" aria-label="${esc(lab)}"><span class="fill" style="height:${bookedPct(x)}%"></span><span class="num">${d.getDate()}</span><span class="bars">${bars.slice(0,4).join("")}</span>${bars.length>4?`<span class="bmore">+${bars.length-4}</span>`:""}</button>`}
+    rows+=`</div>`}
+  const yr=sel.getFullYear()!==new Date().getFullYear()?" "+sel.getFullYear():"";
+  return `<section class="wstrip hmonth" aria-label="Choose a day"><div class="wsh"><button type="button" class="wsnav" data-selmonth="-1" aria-label="Previous month">${ic("left")}</button><button type="button" class="mlink" data-opencal="month" aria-label="Open the ${MONL[sel.getMonth()]} calendar full screen">${MONL[sel.getMonth()]}${yr}${ic("right")}</button><span class="sp"></span>${ds!==td?`<button type="button" class="tdbtn" data-sel="${td}" aria-label="Back to today">Today</button>`:""}<button type="button" class="wsnav" data-selmonth="1" aria-label="Next month">${ic("right")}</button></div><div class="mgrid"><div class="mhead">${DAYN.map((d,i)=>`<span class="${i>4?"we":""}">${d.slice(0,2)}</span>`).join("")}</div><div class="mdays">${rows}</div><div class="mleg" aria-hidden="true">${Object.entries(KINDS).map(([k,v])=>`<span class="k-${k}"><i></i>${v}</span>`).join("")}<span><i class="btk"></i>Task</span><span><i class="bdl"></i>Deadline</span><span><i class="fl"></i>How booked</span></div></div>${selAuto()?`<p class="wsnote">${ic("tick")}Today's plan is done, so tomorrow is showing.</p>`:""}</section>`;
+}
+/* compact week strip (no longer on Home) */
 function weekStripHtml(ds){
   const sel=fromYmd(ds),m=monday(sel),td=todayStr();
   const days=[0,1,2,3,4,5,6].map(i=>{const d=addDays(m,i),x=ymd(d),ev=S.blocks.filter(b=>b.date===x),tk=S.tasks.filter(t=>t.date===x&&!t.done).length;
@@ -956,6 +971,7 @@ document.addEventListener("click",e=>{
   const op=e.target.closest("[data-open]");if(op){openDock(op.dataset.open);return}
   /* Home */
   const sd=e.target.closest("[data-sel]");if(sd){const d=sd.dataset.sel;if(d!==homeSel()){setSel(d);S.earlier=false;render()}return}
+  const smo=e.target.closest("[data-selmonth]");if(smo){const c=fromYmd(homeSel()),n=+smo.dataset.selmonth,t=new Date(c.getFullYear(),c.getMonth()+n,1),last=new Date(t.getFullYear(),t.getMonth()+1,0).getDate(),now=new Date();const pick=(t.getMonth()===now.getMonth()&&t.getFullYear()===now.getFullYear())?todayStr():ymd(new Date(t.getFullYear(),t.getMonth(),Math.min(c.getDate(),last)));setSel(pick);S.earlier=false;render();return}
   const sw=e.target.closest("[data-selweek]");if(sw){setSel(ymd(addDays(fromYmd(homeSel()),7*+sw.dataset.selweek)));render();return}
   const oc=e.target.closest("[data-opencal]");if(oc){const v=oc.dataset.opencal,d=v==="today"?new Date():fromYmd(homeSel());goCal("month",new Date(d.getFullYear(),d.getMonth(),1),pt(e));return}
   const ex=e.target.closest("[data-expand]");if(ex){goCal("day",ex.dataset.expand,pt(e));return}

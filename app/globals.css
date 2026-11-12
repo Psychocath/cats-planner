@@ -926,3 +926,11 @@ body.dockopen .fab,body.sheetopen .fab{display:none}
 .tdbtn{white-space:nowrap}
 .qopts .qhint{display:inline-flex;align-items:center;gap:6px;flex-basis:100%;font-size:.84rem;color:var(--muted)}
 .qopts .qhint .ic{width:1em;height:1em;color:var(--accent)}
+
+/* full month on Home */
+.hmonth .mgrid{margin-top:10px}
+.hmrow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.hmonth .mday{cursor:pointer;font:inherit;color:inherit;min-height:56px;text-align:left}
+.hmonth .mday:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.hmonth .mday.sel{box-shadow:inset 0 0 0 2px var(--accent)}
+.hmonth .mday.sel.today{box-shadow:inset 0 0 0 2px var(--accent),0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent)}
