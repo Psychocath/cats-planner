@@ -4,7 +4,23 @@ import { itemsFor, localNow, toMin } from "./schedule";
 import { loadRolled, nextSession, rebalance, sessionJson, sessionsFor, SIZES } from "./slots";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const DATE = {
+  // A real calendar date, so 31 Feb or month 13 can't be saved and then show on no day.
+  test(v: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    const [y, m, d] = v.split("-").map(Number);
+    const x = new Date(Date.UTC(y, m - 1, d));
+    return x.getUTCFullYear() === y && x.getUTCMonth() === m - 1 && x.getUTCDate() === d;
+  },
+};
+/** Other appointments and routines that day whose times overlap this one. Saved anyway; reported so Cat hears about it. */
+function clashesWith(d: Data, rec: Item) {
+  if (!rec.date || !rec.start || !rec.end) return [];
+  const date = String(rec.date), a = toMin(String(rec.start)), b = toMin(String(rec.end));
+  return itemsFor(d, date, wdOf(date))
+    .filter((i) => i.key.split("|")[1].slice(2) !== rec.id && toMin(i.start) < b && toMin(i.end) > a)
+    .map((i) => ({ title: i.title, start: i.start, end: i.end }));
+}
 const KINDS = ["work", "family", "admin", "me"];
 const COLS: Collection[] = ["tasks", "blocks", "routines", "slots"];
 const SIZEK = Object.keys(SIZES);
@@ -153,7 +169,7 @@ export const TOOLS = [
       properties: {
         collection: { type: "string", enum: COLS },
         id: str("Item id from get_plan or list_tasks."),
-        fields: { type: "object", description: "e.g. {title, date (tasks: planned day), deadline (tasks: last possible day, null to clear), waiting (tasks: what it is blocked on, null to clear), for (tasks: event date YYYY-MM-DD), start, end, kind, notes, location (blocks and routines; null to clear), until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), size (tasks: quick, medium, big; null to clear), ai (tasks: true when Claude is doing it), slot (tasks: slot id; null for the first session), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
+        fields: { type: "object", description: "e.g. {title, date (tasks: planned day, or 'next' for the next work session with room), deadline (tasks: last possible day, null to clear), waiting (tasks: what it is blocked on, null to clear), for (tasks: event date YYYY-MM-DD), start, end, kind, notes, location (blocks and routines; null to clear), until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), size (tasks: quick, medium, big; null to clear), ai (tasks: true when Claude is doing it), slot (tasks: slot id; null for the first session), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
       },
     },
   },
@@ -239,11 +255,12 @@ export async function call(name: string, a: Record<string, unknown>) {
       need(DATE.test(String(a.date)), "Use dates like 2026-11-06.");
       checkTimes(a.start, a.end);
       const rec: Item = { id: uid(), title: String(a.title).trim(), date: String(a.date), start: String(a.start), end: String(a.end), kind: kindOf(a.kind), ...extras(a) };
-      const moved = await updateData((d) => {
+      return updateData((d) => {
         d.blocks.push(rec);
-        return rebalance(d, rec.date as string);
+        const moved = rebalance(d, rec.date as string);
+        const clashes = clashesWith(d, rec);
+        return { added: rec, moved, ...(clashes.length ? { clashes, note: "Saved, but it overlaps the items in clashes. Tell Cat." } : {}) };
       });
-      return { added: rec, moved };
     }
     case "add_task": {
       need(String(a.title || "").trim(), "Give the task a title.");
@@ -274,7 +291,7 @@ export async function call(name: string, a: Record<string, unknown>) {
           need(d.tasks.filter((t) => t.date === date && t.priority === "top" && !t.done).length < 3, "That day already has 3 Top tasks.");
         }
         d.tasks.push(rec);
-        const moved = date && rec.size ? rebalance(d, date) : [];
+        const moved = date && (rec.size || rec.mins) ? rebalance(d, date) : [];
         return { added: rec, moved };
       });
     }
@@ -305,8 +322,19 @@ export async function call(name: string, a: Record<string, unknown>) {
         const i = d[col].findIndex((x) => x.id === a.id);
         need(i >= 0, "No item with that id. Use get_plan or list_tasks to find it.");
         const next = { ...d[col][i], ...f };
+        if (f.title !== undefined) { next.title = String(f.title).trim(); need(next.title, "The title can't be empty."); }
         if (col !== "tasks") checkTimes(next.start, next.end);
-        if (next.date) need(DATE.test(String(next.date)), "Use dates like 2026-11-06.");
+        if (col === "tasks" && f.date === "next") {
+          const at = nextSession(d, next as Item);
+          need(at, "There's no work session in the next 2 weeks to put it in.");
+          next.date = at!.date;
+          if (at!.slot) next.slot = at!.slot;
+          else delete next.slot;
+        }
+        if (next.date) need(DATE.test(String(next.date)), col === "tasks" ? "Use dates like 2026-11-06, or 'next' for the next work session." : "Use dates like 2026-11-06.");
+        if (col === "tasks" && next.priority === "top" && next.date && !next.done && (d[col][i].priority !== "top" || next.date !== d[col][i].date)) {
+          need(d.tasks.filter((t) => t.id !== a.id && t.date === next.date && t.priority === "top" && !t.done).length < 3, "That day already has 3 Top tasks.");
+        }
         if (f.kind !== undefined) next.kind = kindOf(f.kind);
         for (const k of ["remind2", "buffer"]) if (f[k] === null || f[k] === 0 && k === "buffer") delete next[k];
         if (f.location === null || f.location === "") delete next.location;
@@ -326,7 +354,7 @@ export async function call(name: string, a: Record<string, unknown>) {
           if (f.ai === false || f.ai === null) delete next.ai;
           if (f.slot === null || f.slot === "" || f.slot === "work") delete next.slot;
           // Re-planned by hand, so it no longer counts as moved from an earlier day.
-          if (f.date !== undefined && f.date !== d[col][i].date) { delete next.carries; delete next.from; }
+          if (f.date !== undefined && next.date !== d[col][i].date) { delete next.carries; delete next.from; }
         }
         if (col === "slots" && f.days !== undefined) {
           const days = [...new Set(((f.days as unknown[]) || []).map(Number))].filter((n) => n >= 1 && n <= 7).sort();
@@ -337,8 +365,9 @@ export async function call(name: string, a: Record<string, unknown>) {
         else if (f.remind !== undefined) next.remind = Math.max(-1, Math.min(10080, Math.round(Number(f.remind))));
         delete next.example;
         d[col][i] = next as Item;
-        const moved = (col === "blocks" || (col === "tasks" && next.size)) && next.date ? rebalance(d, String(next.date)) : [];
-        return { updated: next, moved };
+        const moved = (col === "blocks" || (col === "tasks" && (next.size || next.mins))) && next.date ? rebalance(d, String(next.date)) : [];
+        const clashes = col === "blocks" ? clashesWith(d, next as Item) : [];
+        return { updated: next, moved, ...(clashes.length ? { clashes, note: "Saved, but it overlaps the items in clashes. Tell Cat." } : {}) };
       });
     }
     case "complete_task":

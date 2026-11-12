@@ -201,7 +201,9 @@ function groupTasks(list){const g=new Map();list.forEach(t=>{const c=clientOf(t)
 /* ---------- work sessions: windows that hold tasks with no set times ---------- */
 /* appointments and routines cut the windows; sizes only warn when a session looks full; Claude's tasks count a third */
 const SIZES={quick:15,medium:45,big:90},SIZEL={quick:"Quick",medium:"Medium",big:"Big"};
-const loadOf=t=>{const m=SIZES[t.size]||0;return t.ai?Math.round(m/3):m};
+const loadOf=t=>{const m=SIZES[t.size]||Math.max(0,+t.mins||0);return t.ai?Math.round(m/3):m};
+/* client tasks are work; anything else without a kind is admin */
+const taskKind=t=>t.kind||(clientOf(t)?"work":"admin");
 function slotDefs(ds){const w=wd(fromYmd(ds));
   if((S.slots||[]).length)return S.slots.filter(s=>(s.days||[]).includes(w)&&!(s.skips||[]).includes(ds)).map(s=>({id:s.id,title:s.title||"Work session",start:s.start,end:s.end,kind:s.kind||"work"})).sort((a,b)=>toMin(a.start)-toMin(b.start));
   return w<=5?[{id:"work",title:"Work session",start:S.work.start,end:S.work.end,kind:"work"}]:[]}
@@ -236,15 +238,16 @@ async function rebalanceFor(ds){
 }
 const sesRow=(ds,s,w,past)=>`<div class="ag ses-r k-${s.kind} ${past?"past":""}"><span class="at">${hm(w[0])}</span><button type="button" class="am" data-session="${sesKey(ds,s)}"><i class="kd" aria-hidden="true"></i><span class="tt"><b>${esc(s.title)}${past?`<span class="pastl">past</span>`:""}</b><small>${hm(w[0])}–${hm(w[1])} · ${inFmt(w[1]-w[0])}</small></span></button></div>`;
 function stepList(t){const st=t.steps||[];if(!st.length)return"";return `<div class="tsteps">${st.map((x,i)=>`<label class="step ${x.done?"done":""}"><input type="checkbox" data-step="${i}" data-key="tasks:${t.id}" ${x.done?"checked":""}><span>${esc(x.text)}</span></label>`).join("")}</div>`}
-function sesTask(t,ds,c){const ns=[t.size?SIZEL[t.size]:""].filter(Boolean).join(" · ");
+function sesTask(t,ds,c){const ns=[t.size?SIZEL[t.size]:t.mins?inFmt(+t.mins):""].filter(Boolean).join(" · ");
   return `<div class="trow ${t.done?"done":""} ${S.flash===t.id?"grow":""}">${chk(t.id,t.done)}<div class="tcol"><button type="button" class="tmain" data-open="tasks:${t.id}"><b>${esc(shortTitle(t,c))}</b>${dateLine(t,ds)}${ns?`<span class="dline">${ns}</span>`:""}</button>${t.done?"":stepList(t)}</div></div>`}
 function sesCard(ds,s){
-  const td=todayStr(),nm=nowMin(),tops=new Set(topFor(ds).map(t=>t.id)),list=s.tasks.filter(t=>!tops.has(t.id)),np=s.tasks.length-list.length;
+  const td=todayStr(),nm=nowMin(),tops=new Set(topFor(ds).map(t=>t.id)),list=s.tasks.filter(t=>!tops.has(t.id)),prio=s.tasks.filter(t=>tops.has(t.id)),np=prio.length,nos=s.tasks.filter(t=>!t.done&&!loadOf(t)).length;
   const open=s.tasks.filter(t=>!t.done).length,all=s.windows.reduce((a,[x,y])=>a+y-x,0),ended=ds===td&&s.windows.every(([,y])=>y<=nm);
   const chips=s.windows.map(([a,b])=>`<span class="wchip ${ds===td&&b<=nm?"gone":""}">${hm(a)}–${hm(b)}</span>`).join("");
-  let h=`<div class="scard k-${s.kind}"><div class="sch"><b>${esc(s.title)} tasks</b><span>${open} to do${np?`, incl. ${np} ${np>1?"priorities":"priority"}`:""} · ${inFmt(all)} in all</span>${sesFull(s)?`<span class="pill amber">Looks full</span>`:""}</div>${s.windows.length>1?`<div class="wchips">${chips}</div>`:""}`;
+  let h=`<div class="scard k-${s.kind}"><div class="sch"><b>${esc(s.title)} tasks</b><span>${open} to do${np?`, incl. ${np} ${np>1?"priorities":"priority"}`:""} · ${inFmt(all)} in all</span>${sesFull(s)?`<span class="pill amber">Looks full</span>`:""}${nos&&s.tasks.some(t=>!t.done&&loadOf(t))?`<span class="nosz">${nos} with no size, not counted</span>`:""}</div>${s.windows.length>1?`<div class="wchips">${chips}</div>`:""}`;
+  if(prio.length)h+=`<p class="cgrp prio">${ic("focus")}Priorities <span>do these first</span></p>${prio.map(t=>sesTask(t,ds,"")).join("")}`;
   h+=groupTasks(list).map(g=>`<p class="cgrp ${g.client?"":"me"}">${esc(g.client||"Personal")} <span>${g.tasks.length} task${g.tasks.length>1?"s":""}</span></p>${g.tasks.map(t=>sesTask(t,ds,g.client)).join("")}`).join("");
-  if(!list.length)h+=`<p class="sesn">No tasks in this session yet.</p>`;
+  if(!list.length&&!prio.length)h+=`<p class="sesn">No tasks in this session yet.</p>`;
   if(ended&&open)h+=`<p class="sesn">Anything not ticked moves to your next work day overnight.</p>`;
   return h+`<button type="button" class="tlink sadd" data-session="${sesKey(ds,s)}" data-sesfocus="1">${ic("plus")}Add a task</button></div>`;
 }
@@ -327,7 +330,7 @@ function scheduleChip(col,rec,date){
   return`${shortD(rec.date)} · ${rec.start}–${rec.end}`;
 }
 function panelHtml(key){
-  const r=resolve(key);if(!r)return"";const{col,rec,date}=r,isT=col==="tasks",isR=col==="routines",kind=rec.kind||(isT?"admin":"work");
+  const r=resolve(key);if(!r)return"";const{col,rec,date}=r,isT=col==="tasks",isR=col==="routines",kind=rec.kind||(isT?taskKind(rec):"work");
   const task=!isT&&rec.taskId?S.tasks.find(t=>t.id===rec.taskId):null;
   const done=isT?!!rec.done:(task?!!task.done:itemDone({...rec,src:col},date));
   const chips=[`<span class="chip k-${kind}">${ic(itemIcon(rec,isR?"repeat":kind))}${KINDS[kind]||"Task"}</span>`,`<span class="chip plain">${ic(isT?"cal":"clock")}${esc(scheduleChip(col,rec,date))}</span>`];
@@ -391,8 +394,8 @@ function renderHeader(){
   if(!cal){sub=`<button type="button" class="dlink" data-opencal="today" aria-label="${esc(fmt(n,{weekday:"long",day:1,month:"long"}))}. Open the calendar">${esc(fmt(n,{weekday:"short",day:1,month:"short"}))}</button>${wxHtml()}`;main=hm(n.getHours()*60+n.getMinutes())}
   else{
     const crumbs=[];
-    if(S.zoom!=="month")crumbs.push(`<button data-crumb="month">${MONL[c.getMonth()]}</button>`);else crumbs.push(`<span class="cur">${c.getFullYear()}</span>`);
-    if(S.zoom==="day")crumbs.push(`<button data-crumb="week">${weekLabel(c)}</button>`);
+    if(S.zoom!=="month")crumbs.push(`<button data-crumb="month">${S.zoom==="day"?MONL[c.getMonth()].slice(0,3):MONL[c.getMonth()]}</button>`);else crumbs.push(`<span class="cur">${c.getFullYear()}</span>`);
+    if(S.zoom==="day")crumbs.push(`<button data-crumb="week">${weekLabel(c).replace(/^(\d+) (\S+) to (\d+) \2$/,"$1 to $3 $2")}</button>`);
     if(S.zoom==="week")crumbs.push(`<span class="cur">Week</span>`);
     sub=`<span class="crumbs">${crumbs.join('<span class="sep">›</span>')}</span>`;
     main=S.zoom==="month"?MONL[c.getMonth()]:S.zoom==="week"?weekLabel(c):(ymd(c)===todayStr()?"Today, ":"")+fmt(c,{weekday:"short",day:1,month:"short"});
@@ -700,7 +703,7 @@ function scheduleSheet(t,day){
   $("#schDays").onclick=e=>{const b=e.target.closest("[data-schday]");if(b)scheduleSheet(t,b.dataset.schday)};
   $("#schDate").onchange=e=>{if(e.target.value)scheduleSheet(t,e.target.value)};
   document.querySelectorAll("[data-schgap]").forEach(b=>b.onclick=()=>{const undo=taskToBlock(t,day,+b.dataset.schgap,+b.dataset.schend);back(`Scheduled ${shortD(day)} ${hm(+b.dataset.schgap)}`,undo)});
-  $("#schPick").onclick=()=>{const g=gs[0];openSheet("blocks",null,{title:t.title,date:day,start:g?hm(g[0]):S.work.start,end:hm(Math.min((g?g[0]:toMin(S.work.start))+mins,23*60+45)),taskId:t.id,kind:t.kind||"admin",icon:t.icon})};
+  $("#schPick").onclick=()=>{const g=gs[0];openSheet("blocks",null,{title:t.title,date:day,start:g?hm(g[0]):S.work.start,end:hm(Math.min((g?g[0]:toMin(S.work.start))+mins,23*60+45)),taskId:t.id,kind:taskKind(t),icon:t.icon})};
   $("#schPlan").onclick=()=>{const before=strip(t);save("tasks",t.id,{...before,date:day,inbox:false});back(`Planned for ${dayWord(day)}`,()=>save("tasks",t.id,before))};
   const cl=$("#schClear");if(cl)cl.onclick=()=>{const before=strip(t),n={...before,date:null,inbox:false};if(n.priority==="top")n.priority="normal";save("tasks",t.id,n);back("Moved to Unscheduled",()=>save("tasks",t.id,before))};
   const ub=$("#schUnblock");if(ub)ub.onclick=()=>{const before=strip(bl);remove("blocks",bl.id);back("Time block removed",()=>save("blocks",bl.id,before))};
@@ -1012,10 +1015,11 @@ function openSheet(type,rec,preset){
       const lc=$("#fLoc").value.trim();if(lc)data.location=lc;else delete data.location}
     if(type!=="routines"){if($("#fStepIn").value.trim())addStep();const st=[...form.querySelectorAll("#fSteps .srow input")].map(i=>({text:i.value.trim(),done:i.dataset.done==="1"})).filter(x=>x.text);if(st.length)data.steps=st;else delete data.steps}
     delete data.example;const saved=save(type,rec.id||uid(),data);
-    if(type==="blocks"||(type==="tasks"&&data.size&&data.date))saved.then(()=>rebalanceFor(data.date));
+    if(type==="blocks"||(type==="tasks"&&(data.size||data.mins)&&data.date))saved.then(()=>rebalanceFor(data.date));
+    const clash=type==="blocks"?allItemsFor(data.date).filter(y=>y.id!==(rec.id||"")&&y.title!==data.title&&toMin(y.start)<toMin(data.end)&&toMin(y.end)>toMin(data.start))[0]:null;
     if(type==="blocks"&&preset.taskId){const tk=S.tasks.find(x=>x.id===preset.taskId);if(tk&&(tk.date!==data.date||tk.inbox!==false))save("tasks",tk.id,{...strip(tk),date:data.date,inbox:false})}
     if(isNew&&preset.title&&preset.title===(S.qa||"").trim())S.qa="";
-    closeSheet();toast(isNew?"Added":"Saved")};
+    closeSheet();toast(clash?`Saved. It overlaps ${clash.title}, ${clash.start} to ${clash.end}`:isNew?"Added":"Saved")};
 }
 
 /* ---------- tell the planner (Gemini) ---------- */

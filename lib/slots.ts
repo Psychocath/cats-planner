@@ -6,7 +6,8 @@ import { localNow, shiftDate, toMin } from "./schedule";
 /** Rough minutes per size, only used to warn when a session looks full. Tasks Claude is doing count a third. */
 export const SIZES: Record<string, number> = { quick: 15, medium: 45, big: 90 };
 export const loadOf = (t: Item) => {
-  const m = SIZES[String(t.size)] || 0;
+  // A size wins; otherwise the minutes Cat gave the task count. Tasks with neither count as 0.
+  const m = SIZES[String(t.size)] || Math.max(0, Number(t.mins) || 0);
   return t.ai ? Math.round(m / 3) : m;
 };
 
@@ -88,6 +89,7 @@ export const sessionJson = (s: Session) => ({
   room_minutes: s.room,
   sized_load_minutes: s.load,
   looks_full: s.load > s.room,
+  unsized_tasks: s.tasks.filter((t) => !t.done && !loadOf(t)).length,
   tasks: s.tasks.map((t) => ({ id: t.id, title: t.title, ...(t.size ? { size: t.size } : {}), ...(t.ai ? { claude_working: true } : {}), ...(t.done ? { done: true } : {}), ...(t.carries ? { carried_from: t.from, carries: t.carries } : {}) })),
 });
 

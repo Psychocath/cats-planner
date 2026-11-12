@@ -16,7 +16,7 @@ export type Action = { name: string; args: Record<string, unknown>; summary: str
 // Gemini's schema subset wants every object to list its properties, so update_item's free-form fields get spelled out.
 const FIELD_PROPS = {
   title: { type: "string" },
-  date: { type: "string", description: "YYYY-MM-DD" },
+  date: { type: "string", description: "YYYY-MM-DD. Tasks only: 'next' for the next work session with room." },
   start: { type: "string", description: "HH:MM" },
   end: { type: "string", description: "HH:MM" },
   kind: { type: "string", enum: ["work", "family", "admin", "me"] },
@@ -67,7 +67,7 @@ function describe(name: string, a: Record<string, unknown>, find: (col: string, 
       const it = find(String(a.collection), a.id), f = (a.fields || {}) as Record<string, unknown>;
       const was = it ? join(it.date && dLabel(it.date), span(it)) : "";
       const moved = f.start !== undefined || f.end !== undefined;
-      const now = join(f.title && `"${f.title}"`, f.date && dLabel(f.date), moved && span({ start: f.start ?? it?.start, end: f.end ?? it?.end }), f.location !== undefined && (f.location ? `at ${f.location}` : "no location"), f.priority === "top" && "Top 3", f.notes && "new notes");
+      const now = join(f.title && `"${f.title}"`, f.date === "next" ? "next work session" : f.date && dLabel(f.date), moved && span({ start: f.start ?? it?.start, end: f.end ?? it?.end }), f.location !== undefined && (f.location ? `at ${f.location}` : "no location"), f.priority === "top" && "Top 3", f.notes && "new notes");
       return { ...base, summary: `Change ${it ? it.title : "an item"}`, detail: was && now ? `${was} → ${now}` : now || was };
     }
     case "complete_task": {
@@ -99,7 +99,7 @@ How to answer:
 - Shopping goes on the shopping list: add_task titled "<Shop> shopping" (e.g. "Checkers shopping") with the items as steps and no date. If that shop's list already exists in the open tasks, use update_item to add the items to its steps instead.
 - Start a client task's title with the client name and a colon, e.g. "Kiddie Depot: finish catalogue", so it groups under that client.
 - Set size (quick, medium, big) only when she says how big it is or it's obvious. Set ai true when she says Claude or AI is doing it.
-- When she asks to move or update a task, it hasn't been done yet: move it to the next work session from now (date "next", or the day she names). When she moves an appointment, keep it at a real time without clashing with other appointments; the sessions reshape around it.
+- When she asks to move or update a task, it hasn't been done yet: move it to the next work session from now (update_item with fields.date "next", or the day she names). When she moves an appointment, keep it at a real time without clashing with other appointments; the sessions reshape around it.
 - Prep tasks name the date they are for in the title, e.g. "Choose a pre-loved toy for Leo to donate for Fri 4 Dec", and set "for" to that date.
 - Pick the kind that fits: work, family (kids, school, home life), admin (errands, bills, appointments), me (rest, exercise, hobbies).
 - Put a place or address she mentions in location.
@@ -114,11 +114,18 @@ async function gemini(body: unknown): Promise<Part[]> {
   if (!key) throw new Error("The Gemini key isn't set up yet. Add GEMINI_API_KEY in Vercel.");
   let last = "";
   const started = Date.now();
-  for (const model of MODELS) {
+  // Keep thinking short: this is a quick scheduling job, and long thinking ran past the time limit.
+  // Flash-Lite takes "minimal"; the full Flash models only take low, medium or high.
+  // If a model refuses the setting anyway, the same model is asked once more without it.
+  const tries = MODELS.flatMap((model) => [
+    { model, thinking: { thinkingLevel: /lite/i.test(model) ? "minimal" : "low" } as Record<string, string> | null },
+    { model, thinking: null },
+  ]);
+  let refused = "";
+  for (const { model, thinking } of tries) {
+    if (!thinking && refused !== model) continue;
     const left = 50000 - (Date.now() - started);
     if (left < 8000) break;
-    // Keep thinking short: this is a quick scheduling job, and long thinking ran past the time limit.
-    const thinking = { thinkingLevel: "minimal" };
     const b = body as Record<string, unknown>;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), Math.min(left - 1000, 28000));
@@ -127,7 +134,7 @@ async function gemini(body: unknown): Promise<Part[]> {
       r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify({ ...b, generationConfig: { ...(b.generationConfig as object), thinkingConfig: thinking } }),
+        body: JSON.stringify({ ...b, generationConfig: { ...(b.generationConfig as object), ...(thinking ? { thinkingConfig: thinking } : {}) } }),
         signal: ctrl.signal,
       });
     } catch {
@@ -146,6 +153,7 @@ async function gemini(body: unknown): Promise<Part[]> {
     console.error(`Gemini ${model} error`, last.slice(0, 400));
     if (r.status === 429) throw new Error("Gemini's free limit is used up for now. Try again in a minute.");
     if (/API key/i.test(last)) throw new Error("Gemini didn't accept the key. Check GEMINI_API_KEY in Vercel.");
+    if (r.status === 400 && thinking && /thinking/i.test(last)) refused = model;
     if (r.status !== 404 && r.status !== 400) break; // only a missing model or an unsupported setting is worth trying the next one
   }
   if (last === "timeout") throw new Error("Gemini took too long to answer. Try again, or say it in fewer words.");

@@ -1032,3 +1032,22 @@ body.homehead #dsub{display:flex;align-items:center;gap:10px;flex-wrap:wrap;marg
 .mk .ml{white-space:nowrap}
 .mk em{white-space:nowrap}
 .hmonth .mday .bars i:nth-child(n+4){display:none}.hmonth .mday .bars i{height:4px}
+
+/* ---- Nov 2026 fixes: contrast, steps, priorities group, timeline titles, laptop layout ---- */
+:root{--warn-ink:color-mix(in srgb,var(--k-admin) 58%,var(--ink))}
+.wait,.pill.amber,.track.amber small{color:var(--warn-ink)}
+.daterow h1 small .dlink{color:color-mix(in srgb,var(--accent) 72%,var(--ink))}
+.nosz{font-size:.8rem;color:var(--muted)}
+.cgrp.prio{color:var(--accent);display:flex;align-items:center;gap:6px}
+.cgrp.prio .ic{width:1.1em;height:1.1em}
+.tsteps .step{align-items:flex-start;min-height:44px;padding:10px 0;box-sizing:border-box;line-height:1.35}
+.tsteps .step input{width:24px;height:24px;margin-top:-2px}
+.step{padding:8px 0;box-sizing:border-box}
+.blk b,.blk .bn{overflow-wrap:anywhere}
+.crumbs{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (min-width:1100px){
+  body.homehead .wrap{max-width:1180px}
+  .homev{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);grid-template-rows:repeat(7,max-content) 1fr;column-gap:32px;align-items:start}
+  .homev>*{grid-column:1;min-width:0}
+  .homev>.myday{grid-column:2;grid-row:1 / 9;margin-top:0}
+}

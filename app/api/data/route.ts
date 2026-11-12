@@ -20,6 +20,12 @@ export async function GET(req: Request) {
 }
 
 const TIME = /^\d{2}:\d{2}$/;
+const realDate = (v: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const [y, m, d] = v.split("-").map(Number);
+  const x = new Date(Date.UTC(y, m - 1, d));
+  return x.getUTCFullYear() === y && x.getUTCMonth() === m - 1 && x.getUTCDate() === d;
+};
 
 export async function POST(req: Request) {
   let body: { op?: string; col?: string; id?: string; data?: Record<string, unknown> };
@@ -61,6 +67,10 @@ export async function POST(req: Request) {
 
   if (op === "set") {
     if (!data || typeof data !== "object") return NextResponse.json({ error: "Nothing to save." }, { status: 400 });
+    if (c !== "slots" && data.title !== undefined && !String(data.title).trim()) return NextResponse.json({ error: "Give it a title first." }, { status: 400 });
+    for (const k of ["date", "for", "deadline", "until"]) {
+      if (data[k] && !realDate(String(data[k]))) return NextResponse.json({ error: "That date doesn't exist. Pick another one." }, { status: 400 });
+    }
     await updateData((d) => {
       const rec = { ...data, id };
       const i = d[c].findIndex((x) => x.id === id);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { updateData } from "@/lib/store";
+import { dailyBackup, updateData } from "@/lib/store";
 import { itemsFor, localNow, shiftDate, toMin } from "@/lib/schedule";
 import { sendToAll } from "@/lib/push";
 import { safeEqual } from "@/lib/auth";
@@ -32,6 +32,8 @@ export async function GET(req: Request) {
 
   // Moves yesterday's unticked tasks to today's first session overnight, before any alert goes out.
   const data = await loadRolled();
+  // Once a day, keep a full copy of the planner (the last 14 days are kept).
+  await dailyBackup(localNow().date);
   // Record that a check ran, so the app can warn when the scheduler stops. Saved at most every
   // 30 minutes to keep Blob writes low; the app warns after 45 minutes without a check.
   const staleCheck = !data.lastCheck || Date.now() - data.lastCheck > 30 * 60000;
