@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
-import { COLLECTIONS, Collection, loadData, updateData } from "@/lib/store";
+import { COLLECTIONS, Collection, updateData } from "@/lib/store";
 import { getKeys } from "@/lib/push";
+import { loadRolled, rebalance } from "@/lib/slots";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const d = await loadData();
+  const d = await loadRolled();
   const origin = new URL(req.url).origin;
   return NextResponse.json({
     tasks: d.tasks,
     blocks: d.blocks,
     routines: d.routines,
+    slots: d.slots,
     settings: d.settings,
     connectorUrl: d.claudeKey ? `${origin}/api/mcp/${d.claudeKey}` : null,
     alerts: { devices: d.subs.length, lastCheck: d.lastCheck ?? null, publicKey: (await getKeys(d)).publicKey },
@@ -42,6 +44,14 @@ export async function POST(req: Request) {
       return d.settings;
     });
     return NextResponse.json({ ok: true, settings });
+  }
+
+  // After an appointment or sized task changes a day, move overflow to the next session with room.
+  if (op === "rebalance") {
+    const date = String(data?.date || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "Use dates like 2026-11-12." }, { status: 400 });
+    const moved = await updateData((d) => rebalance(d, date));
+    return NextResponse.json({ ok: true, moved });
   }
 
   if (!COLLECTIONS.includes(col as Collection) || !id || !/^[\w-]{1,64}$/.test(id)) {

@@ -9,6 +9,7 @@ export type Data = {
   tasks: Item[];
   blocks: Item[];
   routines: Item[];
+  slots: Item[];
   settings: Settings;
   subs: PushSub[];
   sent: Record<string, number>;
@@ -16,7 +17,7 @@ export type Data = {
   claudeKey?: string;
   lastCheck?: number;
 };
-export const COLLECTIONS = ["tasks", "blocks", "routines"] as const;
+export const COLLECTIONS = ["tasks", "blocks", "routines", "slots"] as const;
 export type Collection = (typeof COLLECTIONS)[number];
 
 const BLOB_PATH = "planner/data.json";
@@ -26,6 +27,7 @@ export const emptyData = (): Data => ({
   tasks: [],
   blocks: [],
   routines: [],
+  slots: [],
   settings: { workStart: "09:00", workEnd: "16:00", leadMin: 10 },
   subs: [],
   sent: {},

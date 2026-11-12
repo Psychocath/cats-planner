@@ -6,7 +6,7 @@ const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","De
 const MONL=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYL=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const LEVEL={month:0,week:1,day:2};
-const S={work:{start:"09:00",end:"16:00"},view:"home",zoom:"day",cur:new Date(),tasks:[],blocks:[],routines:[],lead:10,alertsHere:false,devices:0,open:null,dock:null,scroll:{}};
+const S={work:{start:"09:00",end:"16:00"},view:"home",zoom:"day",cur:new Date(),tasks:[],blocks:[],routines:[],slots:[],lead:10,alertsHere:false,devices:0,open:null,dock:null,scroll:{}};
 S.cur.setHours(0,0,0,0);
 
 /* ---------- helpers ---------- */
@@ -126,7 +126,7 @@ async function api(body){
   if(!r.ok){let m="Couldn't save. Check your connection and try again.";try{m=(await r.json()).error||m}catch(_){}throw new Error(m)}
   return r.json();
 }
-function cacheData(){store.set("cache",{tasks:S.tasks,blocks:S.blocks,routines:S.routines,settings:{workStart:S.work.start,workEnd:S.work.end,leadMin:S.lead,morning:S.morning,palette:S.palette}})}
+function cacheData(){store.set("cache",{tasks:S.tasks,blocks:S.blocks,routines:S.routines,slots:S.slots,settings:{workStart:S.work.start,workEnd:S.work.end,leadMin:S.lead,morning:S.morning,palette:S.palette}})}
 async function save(col,id,data){
   const list=S[col],i=list.findIndex(x=>x.id===id),rec={...data,id};
   if(i>=0)list[i]=rec;else{list.push(rec);S.flash=id;setTimeout(()=>S.flash=null,800)}
@@ -163,6 +163,92 @@ function firstGap(ds,mins){const g=gaps(ds,mins)[0];return g?g[0]:null}
 /* how booked a day is: one-off blocks only, so weekly routines don't make every weekday look the same */
 function bookedPct(ds){const ws=Math.min(7*60,toMin(S.work.start)),we=Math.max(19*60,toMin(S.work.end)),r=S.blocks.filter(x=>x.date===ds).map(i=>[toMin(i.start),toMin(i.end)]).sort((a,b)=>a[0]-b[0]),m=[];r.forEach(x=>{const l=m[m.length-1];if(l&&x[0]<=l[1])l[1]=Math.max(l[1],x[1]);else m.push([...x])});let b=0;m.forEach(([a,c])=>b+=Math.max(0,Math.min(c,we)-Math.max(a,ws)));return Math.min(100,Math.round(b/(we-ws)*150))}
 function ratio(){const d=S.tasks.filter(t=>t.mins&&t.actual);if(d.length<3)return 1;const r=d.reduce((a,t)=>a+t.actual/t.mins,0)/d.length;return Math.max(.5,Math.min(3,r))}
+/* ---------- work sessions: windows that hold tasks with no set times ---------- */
+/* appointments and routines cut the windows; sizes only warn when a session looks full; Claude's tasks count a third */
+const SIZES={quick:15,medium:45,big:90},SIZEL={quick:"Quick",medium:"Medium",big:"Big"};
+const loadOf=t=>{const m=SIZES[t.size]||0;return t.ai?Math.round(m/3):m};
+function slotDefs(ds){const w=wd(fromYmd(ds));
+  if((S.slots||[]).length)return S.slots.filter(s=>(s.days||[]).includes(w)&&!(s.skips||[]).includes(ds)).map(s=>({id:s.id,title:s.title||"Work session",start:s.start,end:s.end,kind:s.kind||"work"})).sort((a,b)=>toMin(a.start)-toMin(b.start));
+  return w<=5?[{id:"work",title:"Work session",start:S.work.start,end:S.work.end,kind:"work"}]:[]}
+const sesOrder=(a,b)=>(b.carries||0)-(a.carries||0)||(a.priority==="top"?0:1)-(b.priority==="top"?0:1)||(a.createdAt||0)-(b.createdAt||0);
+function sessions(ds){
+  const b=busy(ds),td=todayStr(),nm=ds===td?nowMin():null;
+  const ss=slotDefs(ds).map(s=>{let t=toMin(s.start);const e=toMin(s.end),w=[];for(const[x,y]of b){if(Math.min(x,e)-t>=15)w.push([t,Math.min(x,e)]);t=Math.max(t,y)}if(e-t>=15)w.push([t,e]);return{...s,windows:w,tasks:[],load:0,room:0}});
+  const open=s=>s.windows.length&&(nm===null||s.windows.some(([,y])=>y>nm));
+  const timed=new Set(S.blocks.filter(x=>x.taskId&&x.date===ds).map(x=>x.taskId));
+  S.tasks.filter(t=>(t.date===ds||(ds===td&&t.date&&t.date<ds&&!t.done))&&!timed.has(t.id)).sort(sesOrder).forEach(t=>{
+    const s=ss.find(x=>x.id===t.slot&&open(x))||ss.find(open)||ss.find(x=>x.windows.length)||ss[0];if(s)s.tasks.push(t)});
+  ss.forEach(s=>{s.room=s.windows.reduce((a,[x,y])=>a+Math.max(0,y-Math.max(x,nm??0)),0);s.load=s.tasks.filter(t=>!t.done).reduce((a,t)=>a+loadOf(t),0)});
+  return ss;
+}
+const sesKey=(ds,s)=>ds+"|"+s.id;
+const sesSpan=s=>s.windows.map(([a,b])=>hm(a)+"–"+hm(b)).join(", ");
+const sesFull=s=>s.load>s.room&&s.tasks.some(t=>!t.done&&loadOf(t));
+/* free work time that no session covers, for days with custom slots */
+function looseGaps(ds,min){const ws=sessions(ds).flatMap(s=>s.windows);return gaps(ds,min).flatMap(([a,b])=>{let out=[[a,b]];ws.forEach(([x,y])=>{out=out.flatMap(([p,q])=>y<=p||x>=q?[[p,q]]:[[p,x],[y,q]].filter(([u,v])=>v-u>0))});return out.filter(([u,v])=>v-u>=min)})}
+/* the session after this one: later that day, then the next work days */
+function nextSession(ds,id){
+  const ss=sessions(ds),i=ss.findIndex(s=>s.id===id),later=ss.slice(i+1).find(s=>s.room);if(later)return{ds,s:later};
+  let d=ds;for(let k=0;k<14;k++){d=ymd(addDays(fromYmd(d),1));const f=sessions(d).find(s=>s.windows.length);if(f)return{ds:d,s:f}}return null}
+function moveTask(t,ds,slot){const r={...strip(t),date:ds,inbox:false};if(slot&&slot!=="work")r.slot=slot;else delete r.slot;if(ds!==t.date){delete r.carries;delete r.from}return save("tasks",t.id,r)}
+/* after an appointment or a sized task changes a day, the server moves overflow to the next session with room */
+async function rebalanceFor(ds){
+  if(!ds||ds<todayStr())return;
+  let j;try{j=await api({op:"rebalance",data:{date:ds}})}catch(_){return}
+  const mv=j.moved||[];if(!mv.length)return;
+  await load();const to=mv[mv.length-1].to;
+  toast(`${mv.length} task${mv.length>1?"s":""} moved to ${to.label}, ${dayWord(to.date)}`,()=>{mv.forEach(m=>{const t=S.tasks.find(x=>x.id===m.id);if(t){const r={...strip(t),date:m.from.date};if(m.from.slot)r.slot=m.from.slot;else delete r.slot;save("tasks",t.id,r)}});toast("Moved back")});
+}
+function sesHead(ds,s,w){
+  const td=todayStr(),tops=new Set(topFor(ds).map(t=>t.id)),list=s.tasks.filter(t=>!tops.has(t.id)),np=s.tasks.length-list.length;
+  const open=s.tasks.filter(t=>!t.done).length,done=s.tasks.length-open,ended=ds===td&&s.windows.every(([,y])=>y<=nowMin());
+  const sub=[sesSpan(s),s.tasks.length?`${open} to do${done?`, ${done} done`:""}${np?`, incl. ${np} ${np>1?"priorities":"priority"}`:""}`:"no tasks yet",s.load?`about ${inFmt(s.load)} of ${inFmt(s.room)} left`:""].filter(Boolean).join(" · ");
+  let h=`<div class="ses k-${s.kind}"><div class="sh"><span class="at">${hm(w[0])}</span><button type="button" class="am" data-session="${sesKey(ds,s)}"><i class="kd" aria-hidden="true"></i><span class="tt"><b>${esc(s.title)}</b><small>${sub}</small></span></button>${sesFull(s)?`<span class="pill amber">Looks full</span>`:""}</div>`;
+  if(list.length)h+=`<div class="sl">${list.map(t=>trow(t,ds)).join("")}</div>`;
+  if(ended&&open)h+=`<p class="sesn">Anything not ticked moves to your next work day overnight.</p>`;
+  return h+`<button type="button" class="tlink sadd" data-session="${sesKey(ds,s)}" data-sesfocus="1">${ic("plus")}Add a task</button></div>`;
+}
+const sesCont=(ds,s,w)=>`<div class="ag ses-c k-${s.kind}"><span class="at">${hm(w[0])}</span><button type="button" class="am" data-session="${sesKey(ds,s)}"><i class="kd" aria-hidden="true"></i><span class="tt"><b>${esc(s.title)} continues</b><small>${hm(w[0])}–${hm(w[1])} · same task list</small></span></button></div>`;
+function openSession(key,focus){
+  const[ds,id]=key.split("|"),s=sessions(ds).find(x=>x.id===id);if(!s){toast("That session isn't on this day any more.");return}
+  const row=t=>`<div class="trow ${t.done?"done":""}">${chk(t.id,t.done)}<span class="tmain"><b>${esc(t.title)}</b>${dateLine(t,ds)}${t.size?`<span class="dline">${SIZEL[t.size]}</span>`:""}</span>${t.done?"":`<button type="button" class="tlink" data-sesnext="${t.id}" aria-label="Move ${esc(t.title)} to the next session">Next${ic("right")}</button>`}</div>`;
+  sheet(s.title,`<div class="in"><h3>${esc(s.title)}, ${esc(dayWord(ds))}</h3><p class="hint">${s.windows.length?esc(sesSpan(s)):"Appointments fill this session"}${s.load?` · about ${inFmt(s.load)} of ${inFmt(s.room)} left`:""}. Work down the list in any order.</p>
+    ${sesFull(s)?`<p class="over-l">${ic("hourglass")}The sized tasks here look like more than the time left.</p>`:""}
+    <form class="quick" id="sesNew"><input id="sesIn" placeholder="Add a task to this session" autocomplete="off" aria-label="New task"><button type="submit">Add</button></form>
+    <div class="f"><span class="lb">Size <span class="opt">(optional)</span></span>${optsHtml("sesSize",[["","Not sized"],["quick","Quick"],["medium","Medium"],["big","Big"]],"","s")}</div>
+    <div class="f"><span class="lb">Who's doing it</span>${optsHtml("sesAi",[["0","Me"],["1","Claude"]],"0","a")}</div>
+    ${s.tasks.length?`<div class="card list">${s.tasks.map(row).join("")}</div>`:`<p class="hint">No tasks in this session yet.</p>`}
+    <div class="acts sticky"><button class="ghost" type="button" data-sheetx style="flex:1">Close</button></div></div>`);
+  ["sesSize","sesAi"].forEach(g=>$("#"+g).onclick=e=>{const b=e.target.closest("button");if(!b)return;$("#"+g).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")});
+  $("#sesNew").onsubmit=async e=>{e.preventDefault();const v=$("#sesIn").value.trim();if(!v)return;const id2=uid(),sz=picked("sesSize","s",""),ai=picked("sesAi","a","0")==="1";
+    const r={title:v,date:ds,priority:"normal",mins:null,done:false,inbox:false,createdAt:Date.now()};if(id!=="work")r.slot=id;if(sz)r.size=sz;if(ai)r.ai=true;
+    const p=save("tasks",id2,r);openSession(key);toast("Added to "+s.title,()=>remove("tasks",id2));if(sz){await p;rebalanceFor(ds)}};
+  $("#sheetRoot").onclick=e=>{if(e.target.closest("[data-toggle]")){setTimeout(()=>{if(sheetOpen())openSession(key)},420);return}const n=e.target.closest("[data-sesnext]");if(!n)return;const t=S.tasks.find(x=>x.id===n.dataset.sesnext);if(!t)return;const nx=nextSession(ds,id);if(!nx){toast("There's no session in the next 2 weeks.");return}
+    const before=strip(t);moveTask(t,nx.ds,nx.s.id);openSession(key);toast(`Moved to ${nx.s.title}, ${dayWord(nx.ds)}`,()=>save("tasks",t.id,before))};
+  if(focus)setTimeout(()=>$("#sesIn")?.focus(),60);
+}
+/* weekly slots, set in Settings; until there are any, each weekday's work hours act as one session */
+function openSlot(rec){
+  const isNew=!rec;rec=rec||{title:"",start:S.work.start,end:"12:00",days:[1,2,3,4,5],kind:"work"};
+  sheet(isNew?"New work slot":"Edit work slot",`<form class="in" id="slForm"><h3>${isNew?"New":"Edit"} work slot</h3>
+    ${(S.slots||[]).length?"":`<p class="hint">Your first slot replaces the single all-day session, so add each window you want.</p>`}
+    <div class="f"><label for="slTitle">Name</label><input id="slTitle" value="${esc(rec.title)}" placeholder="Client work" autocomplete="off"></div>
+    <div class="two">${tp("slStart",rec.start,"Start")}${tp("slEnd",rec.end,"End")}</div>
+    <div class="f"><span class="lb">Days</span><div class="opts" id="slDays">${DAYN.map((n,i)=>`<button type="button" data-d="${i+1}" aria-pressed="${(rec.days||[]).includes(i+1)}">${n}</button>`).join("")}</div></div>
+    <div class="f"><span class="lb">Type</span>${optsHtml("slKind",Object.entries(KINDS),rec.kind||"work","k")}</div>
+    <div class="err" id="slErr" role="alert"></div>
+    <div class="acts sticky"><button class="primary" type="submit">${isNew?"Add":"Save"}</button>${isNew?"":`<button type="button" class="danger" id="slDel">Delete</button>`}<button type="button" class="ghost" id="slBack">Back</button></div></form>`);
+  linkTimes("slStart","slEnd");
+  $("#slDays").onclick=e=>{const b=e.target.closest("button");if(b)b.setAttribute("aria-pressed",b.getAttribute("aria-pressed")==="true"?"false":"true")};
+  $("#slKind").onclick=e=>{const b=e.target.closest("button");if(!b)return;$("#slKind").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")};
+  $("#slBack").onclick=openSettings;
+  if(!isNew)$("#slDel").onclick=()=>{const before=strip(rec);remove("slots",rec.id);openSettings();toast("Slot deleted",()=>save("slots",rec.id,before))};
+  $("#slForm").onsubmit=e=>{e.preventDefault();const err=$("#slErr"),t=$("#slTitle").value.trim(),s=tpv("slStart"),en=tpv("slEnd"),days=[...document.querySelectorAll('#slDays [aria-pressed="true"]')].map(b=>+b.dataset.d);
+    if(!t){err.textContent="Give the slot a name.";return}if(!days.length){err.textContent="Pick at least one day.";return}if(toMin(en)<=toMin(s)){err.textContent="End time needs to be after the start time.";return}
+    save("slots",rec.id||uid(),{...strip(rec),title:t,start:s,end:en,days,kind:picked("slKind","k","work")});openSettings();toast(isNew?"Slot added":"Slot saved")};
+}
+const slotsHtml=()=>(S.slots||[]).length?`<div class="card list">${[...S.slots].sort((a,b)=>toMin(a.start)-toMin(b.start)).map(s=>`<button type="button" class="crow k-${s.kind||"work"}" data-slotedit="${s.id}"><span class="cd">${s.start}</span><span class="tt"><b>${esc(s.title)}</b><small>${s.start}–${s.end} · ${dayLabel(s.days)}</small></span></button>`).join("")}</div><button type="button" class="tlink" data-slotnew>${ic("plus")}Add a slot</button>`
+  :`<p class="hint">Each weekday's work hours act as one work session that holds your tasks. Add slots to split it, e.g. Client work 09:00 to 13:00.</p><button type="button" class="tlink" data-slotnew>${ic("plus")}Add a slot</button>`;
 const REMINDS=[["d","Default"],[-1,"None"],[0,"At start"],[5,"5 min"],[15,"15 min"],[30,"30 min"],[60,"1 h"],[120,"2 h"],[1440,"1 day"]];
 const REMINDS2=[["n","None"],[0,"At start"],[5,"5 min"],[15,"15 min"],[30,"30 min"],[60,"1 h"],[1440,"1 day"]];
 const remindLabel=r=>r===undefined||r===null?`${S.lead} min before`:r<0?"No reminder":r===0?"At start":r>=1440?(r/1440)+" day"+(r>1440?"s":"")+" before":r>=60?(r/60)+" h before":r+" min before";
@@ -172,7 +258,7 @@ function timing(it,ds){if(ds!==todayStr())return"";const m=nowMin(),s=toMin(it.s
 /* ---------- dates in words: planned date, deadline and event date stay separate ---------- */
 const relDay=ds=>{const n=daysBetween(todayStr(),ds);if(n===0)return"today";if(n===1)return"tomorrow";if(n===-1)return"yesterday";if(n>-7&&n<7)return DAYL[wd(fromYmd(ds))-1];return fmt(fromYmd(ds),{day:1,month:"short"})+(ds.slice(0,4)!==todayStr().slice(0,4)?" "+ds.slice(0,4):"")};
 const dayWord=ds=>{const n=daysBetween(todayStr(),ds);return n===0?"today":n===1?"tomorrow":fmt(fromYmd(ds),{weekday:"long",day:1,month:"short"})};
-const carried=t=>!!(t.date&&t.date<todayStr()&&!t.done);
+const carried=t=>!t.done&&!!t.date&&(t.date<todayStr()||(!!t.carries&&!!t.from&&t.date===todayStr()));
 const nextStep=t=>(t.steps||[]).find(x=>!x.done);
 /* the event a prep task is for: a one-off block on that day whose title shares a word with the task */
 function eventName(t){
@@ -184,7 +270,8 @@ function eventName(t){
 function dateBits(t,ctx){
   const td=todayStr(),b=[];
   if(t.waiting&&!t.done)b.push(["wait","Waiting on "+esc(t.waiting)]);
-  if(carried(t))b.push(["","Moved from "+relDay(t.date)]);
+  if(t.ai&&!t.done)b.push(["aiw","Claude working"]);
+  if(carried(t)){const f=t.date<td?t.date:t.from,n=(t.carries||0)+(t.date<td?1:0);b.push([n>=3?"amber":"","From "+DAYN[wd(fromYmd(f))-1]+(n>=3?`, moved ${n} times`:"")])}
   else if(t.date&&t.date!==ctx)b.push(["","Planned "+relDay(t.date)]);
   if(t.deadline&&!t.done){const n=daysBetween(td,t.deadline);b.push(n<0?["red","Overdue since "+relDay(t.deadline)]:n===0?["amber","Due today"]:n===1?["amber","Due tomorrow"]:["","Do by "+relDay(t.deadline)])}
   if(t.for){const n=daysBetween(td,t.for),nm=esc(eventName(t));b.push(n<0?["",nm+" was "+relDay(t.for)]:["",nm+" "+relDay(t.for)])}
@@ -430,35 +517,41 @@ function agRow(it,ds,cls){
 function gapRow(ds,a,b){return `<div class="ag free"><span class="at">${hm(a)}</span><span class="gt">Free until ${hm(b)} <small>· ${inFmt(b-a)}</small></span><button type="button" class="tlink" data-fill="${ds}|${a}|${b}" aria-label="Add a task from ${hm(a)} to ${hm(b)}">Add a task${ic("right")}</button></div>`}
 function agendaHtml(ds){
   const td=todayStr(),isT=ds===td,nm=nowMin(),its=allItemsFor(ds),work=isWorkday(fromYmd(ds));
-  const gs=work&&ds>=td?gaps(ds,30):[];
-  const rows=[...its.map(it=>({s:toMin(it.start),e:toMin(it.end),it})),...gs.map(([a,b])=>({s:a,e:b,gap:1}))].sort((a,b)=>a.s-b.s||(a.gap?1:-1));
-  const fw=freeWork(ds),need=S.tasks.filter(t=>(t.date===ds||(isT&&carried(t)))&&!t.done&&t.mins&&!S.blocks.some(b=>b.taskId===t.id&&b.date===ds)).reduce((a,t)=>a+Math.round(t.mins*ratio()),0);
+  const gs=work&&ds>=td?looseGaps(ds,30):[],ss=ds>=td?sessions(ds):[];
+  /* each session shows its list once, at its first window still to come; later windows say it continues */
+  const ses=ss.flatMap(se=>{const live=se.windows.filter(([,b])=>!isT||b>nm),hw=live[0]||se.windows[se.windows.length-1]||[toMin(se.start),toMin(se.end)];
+    return se.windows.filter(w=>w!==hw&&(!isT||w[1]>nm)).map(w=>({s:w[0],e:w[1],ses:se,w})).concat([{s:hw[0],e:hw[1],ses:se,w:hw,head:1,keep:1}])});
+  const rows=[...its.map(it=>({s:toMin(it.start),e:toMin(it.end),it})),...gs.map(([a,b])=>({s:a,e:b,gap:1})),...ses].sort((a,b)=>a.s-b.s||(a.it?-1:1));
+  const inSes=new Set(ss.flatMap(se=>se.tasks.map(t=>t.id)));
+  const fw=freeWork(ds),need=S.tasks.filter(t=>(t.date===ds||(isT&&carried(t)))&&!t.done&&t.mins&&!t.size&&!inSes.has(t.id)&&!S.blocks.some(b=>b.taskId===t.id&&b.date===ds)).reduce((a,t)=>a+Math.round(t.mins*ratio()),0);
   const av=availText(ds);
   let h=`<section class="sec"><div class="sech"><h2>${ic("cal")}Your day</h2><button type="button" class="tlink" data-expand="${ds}">Expand timeline${ic("right")}</button></div>${av?`<p class="avail">${esc(av)}</p>`:""}`;
   if(work&&ds>=td&&need>fw)h+=`<p class="over-l">${ic("hourglass")}Tasks planned for ${esc(dayWord(ds))} need about ${inFmt(need)}, more than the ${fw?inFmt(fw):"no"} free time in work hours.</p>`;
   if(!rows.length)return h+`<div class="card empty-d"><span>Nothing planned for ${esc(dayWord(ds))}.</span><button type="button" class="tlink" data-addday="${ds}">Add something${ic("right")}</button></div></section>`;
   let body="";
+  const rowHtml=(r,cls)=>r.ses?(r.head?sesHead(ds,r.ses,r.w):sesCont(ds,r.ses,r.w)):r.gap?gapRow(ds,r.s,r.e):agRow(r.it,ds,cls);
   if(isT){
-    const past=rows.filter(r=>!r.gap&&r.e<=nm),rest=rows.filter(r=>r.gap||r.e>nm);
+    const past=rows.filter(r=>r.it&&r.e<=nm),rest=rows.filter(r=>!r.it||r.e>nm);
     if(past.length){const dn=past.filter(r=>itemDone(r.it,ds)).length;
       body+=`<button type="button" class="ag earlier" data-earlier aria-expanded="${!!S.earlier}">${ic(S.earlier?"down":"right")}<span>Earlier today · ${past.length} item${past.length>1?"s":""}${dn?`, ${dn} done`:""}</span></button>`;
       if(S.earlier)body+=past.map(r=>agRow(r.it,ds,"past")).join("")}
     let nowShown=false;
-    rest.forEach(r=>{if(!nowShown&&r.s>nm){body+=`<div class="ag nowm" aria-label="Now, ${hm(nm)}"><span class="at">${hm(nm)}</span><span class="nl">Now</span></div>`;nowShown=true}body+=r.gap?gapRow(ds,r.s,r.e):agRow(r.it,ds)});
+    rest.forEach(r=>{if(!nowShown&&r.s>nm){body+=`<div class="ag nowm" aria-label="Now, ${hm(nm)}"><span class="at">${hm(nm)}</span><span class="nl">Now</span></div>`;nowShown=true}body+=rowHtml(r)});
     if(!nowShown&&nm<24*60)body+=`<div class="ag nowm"><span class="at">${hm(nm)}</span><span class="nl">Now · nothing else planned today</span></div>`;
-  }else body=rows.map(r=>r.gap?gapRow(ds,r.s,r.e):agRow(r.it,ds,ds<td?"past":"")).join("");
+  }else body=rows.map(r=>rowHtml(r,ds<td?"past":"")).join("");
   return h+`<div class="card agenda">${body}</div></section>`;
 }
 
 /* 7. other tasks: the day's tasks without a time, Inbox, Unscheduled, routines, done */
-function trow(t,ctx){const st=t.steps||[],meta=[t.mins?inFmt(t.mins):"",st.length?`${st.filter(x=>x.done).length} of ${st.length} steps`:""].filter(Boolean).join(" · ");
+function trow(t,ctx){const st=t.steps||[],meta=[t.size?SIZEL[t.size]:"",t.mins?inFmt(t.mins):"",st.length?`${st.filter(x=>x.done).length} of ${st.length} steps`:""].filter(Boolean).join(" · ");
   return `<div class="trow ${t.done?"done":""} ${S.flash===t.id?"grow":""}">${chk(t.id,t.done)}<button type="button" class="tmain" data-open="tasks:${t.id}"><b>${esc(t.title)}</b>${dateLine(t,ctx)}${meta?`<span class="dline">${meta}</span>`:""}</button></div>`}
 function otherGroups(ds){
   const td=todayStr(),tops=new Set(topFor(ds).map(t=>t.id)),att=new Set(attentionItems(ds).map(a=>a.t.id));
   const timed=new Set(S.blocks.filter(b=>b.taskId&&b.date===ds).map(b=>b.taskId));
   const open=S.tasks.filter(t=>!t.done&&!tops.has(t.id));
-  const day=open.filter(t=>(t.date===ds||(ds===td&&carried(t)))&&!att.has(t.id)&&!timed.has(t.id)).sort((a,b)=>(carried(a)?1:0)-(carried(b)?1:0));
-  const dayDone=S.tasks.filter(t=>t.done&&t.date===ds&&!tops.has(t.id));
+  const inSes=new Set(ds>=td?sessions(ds).flatMap(se=>se.tasks.map(t=>t.id)):[]);
+  const day=open.filter(t=>(t.date===ds||(ds===td&&carried(t)))&&!att.has(t.id)&&!timed.has(t.id)&&!inSes.has(t.id)).sort((a,b)=>(carried(b)?1:0)-(carried(a)?1:0));
+  const dayDone=S.tasks.filter(t=>t.done&&t.date===ds&&!tops.has(t.id)&&!inSes.has(t.id));
   const inbox=open.filter(t=>!t.date&&t.inbox!==false).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   const uns=open.filter(t=>!t.date&&t.inbox===false);
   const done=S.tasks.filter(t=>t.done&&t.date!==ds);
@@ -611,7 +704,8 @@ function timelineHtml(ds,work){
   for(let hr=sH;hr<=eH;hr++){const top=y(hr*60);rail+=`<span style="top:${top}px">${pad(hr%24)}:00</span>`;grid+=`<div class="hr" style="top:${top}px"></div>`;
     if(hr<eH)grid+=`<div class="hr half" style="top:${y(hr*60+30)}px"></div><button class="slot" data-slot="${pad(hr)}:00" data-slotday="${ds}" style="top:${top}px;height:${y(hr*60+30)-top}px" aria-label="Add block at ${pad(hr)}:00"></button><button class="slot" data-slot="${pad(hr)}:30" data-slotday="${ds}" style="top:${y(hr*60+30)}px;height:${y(hr*60+60)-y(hr*60+30)}px" aria-label="Add block at ${pad(hr)}:30"></button>`}
   {const ws=toMin(S.work.start),we=toMin(S.work.end);if(ws>sH*60)grid+=`<div class="off" style="top:0;height:${y(ws)}px"></div>`;if(we<eH*60)grid+=`<div class="off" style="top:${y(we)}px;height:${y(eH*60)-y(we)}px"></div>`;if(work)grid+=`<span class="wl" style="top:${y(ws)}px">Work day starts</span><span class="wl" style="top:${y(we)}px">Work day ends</span>`}
-  if(work)gaps(ds,30).forEach(([a,b])=>{grid+=`<button class="gap" data-slot="${hm(a)}" data-slotday="${ds}" style="top:${y(a)+3}px;height:${y(b)-y(a)-6}px" aria-label="${inFmt(b-a)} free from ${hm(a)}. Add a block">${ic("plus")}${inFmt(b-a)} free</button>`});
+  if(ds>=todayStr())sessions(ds).forEach(se=>se.windows.forEach(([a,b],i)=>{const n=se.tasks.filter(t=>!t.done).length;if(y(b)-y(a)<30)return;grid+=`<button class="gap ses-w k-${se.kind}" data-session="${sesKey(ds,se)}" style="top:${y(a)+3}px;height:${y(b)-y(a)-6}px" aria-label="${esc(se.title)} ${hm(a)} to ${hm(b)}, ${n} tasks. Open the session">${ic("list")}${esc(se.title)}${i?" continues":` · ${n} task${n===1?"":"s"}`}</button>`}));
+  if(work&&ds>=todayStr())looseGaps(ds,30).forEach(([a,b])=>{grid+=`<button class="gap" data-slot="${hm(a)}" data-slotday="${ds}" style="top:${y(a)+3}px;height:${y(b)-y(a)-6}px" aria-label="${inFmt(b-a)} free from ${hm(a)}. Add a block">${ic("plus")}${inFmt(b-a)} free</button>`});
   items.forEach(it=>{if(!it.buffer)return;const bs=toMin(it.end),be=Math.min(bs+it.buffer,eH*60);if(be>bs)grid+=`<div class="buf" style="top:${y(bs)+1}px;height:${y(be)-y(bs)-2}px"><span>Buffer ${it.buffer} min</span></div>`});
   items.forEach(it=>{const s=Math.max(toMin(it.start),sH*60),e=Math.min(Math.max(toMin(it.end),s+1),eH*60);if(e<=s)return;
     const w=100/it._lanes,ht=y(e)-y(s)-2,short=ht<60,isR=it.src==="routines",key=`${it.src}:${it.id}:${ds}`,done=itemDone(it,ds),note=itemNote(it,ds),cur=isToday&&toMin(it.start)<=nm&&toMin(it.end)>nm&&!done;
@@ -796,7 +890,7 @@ function openSheet(type,rec,preset){
     main+=`<div class="f"><label for="fDate">Day</label><input id="fDate" type="date" value="${rec.date||preset.date||ymd(S.cur)}"></div><div class="two">${tp("fStart",st,"Start")}${tp("fEnd",en,"End")}</div><div class="f"><label for="fLoc">Where <span class="opt">(optional)</span></label><input id="fLoc" value="${esc(rec.location||preset.location||"")}" placeholder="Address or place" autocomplete="off"></div>`+kindOpts+iconOpts;
   }else if(type==="tasks"){
     const pri=(rec.priority||preset.priority)==="top"?"top":"normal";
-    main+=`<div class="two"><div class="f"><label for="fDate">Planned for <span class="opt">(optional)</span></label><input id="fDate" type="date" value="${rec.date||preset.date||""}"></div><div class="f"><label for="fDeadline">Deadline <span class="opt">(optional)</span></label><input id="fDeadline" type="date" value="${rec.deadline||""}"></div></div><p class="hint fhint">Planned for is the day you mean to do it. Deadline is the last day it can be done.</p><div class="f"><span class="lb">Priority</span>${optsHtml("fPri",[["top","Priority for that day"],["normal","Normal"]],pri,"p")}</div>`+kindOpts.replace('"fKind",Object','"fKind",Object');
+    main+=`<div class="two"><div class="f"><label for="fDate">Planned for <span class="opt">(optional)</span></label><input id="fDate" type="date" value="${rec.date||preset.date||""}"></div><div class="f"><label for="fDeadline">Deadline <span class="opt">(optional)</span></label><input id="fDeadline" type="date" value="${rec.deadline||""}"></div></div><p class="hint fhint">Planned for is the day you mean to do it. Deadline is the last day it can be done.</p><div class="f"><span class="lb">Priority</span>${optsHtml("fPri",[["top","Priority for that day"],["normal","Normal"]],pri,"p")}</div><div class="f"><span class="lb">Size <span class="opt">(optional, warns when a session looks full)</span></span>${optsHtml("fSize",[["","Not sized"],["quick","Quick"],["medium","Medium"],["big","Big"]],rec.size||preset.size||"","s")}</div><div class="f"><span class="lb">Who's doing it</span>${optsHtml("fAi",[["0","Me"],["1","Claude"]],rec.ai||preset.ai?"1":"0","a")}</div>${(S.slots||[]).length?`<div class="f"><label for="fSlot">Work session</label><select id="fSlot"><option value="">First session that day</option>${S.slots.map(x=>`<option value="${x.id}" ${(rec.slot||preset.slot)===x.id?"selected":""}>${esc(x.title)} (${x.start}–${x.end}, ${dayLabel(x.days)})</option>`).join("")}</select></div>`:""}`+kindOpts.replace('"fKind",Object','"fKind",Object');
     more+=`<div class="two"><div class="f"><label for="fFor">Related event on</label><input id="fFor" type="date" value="${rec.for||""}"></div><div class="f"><label for="fMins">Minutes</label><input id="fMins" type="number" min="5" step="5" inputmode="numeric" value="${rec.mins||""}" placeholder="30"></div></div><div class="f"><label for="fWait">Waiting on <span class="opt">(only if something else has to happen first)</span></label><input id="fWait" value="${esc(rec.waiting||"")}" placeholder="e.g. landlord's reply" autocomplete="off"></div><div class="f"><label for="fNotes">Notes</label><textarea id="fNotes" rows="3">${esc(rec.notes||"")}</textarea></div>`+iconOpts;
     moreNote="Related event, minutes, waiting on, notes, icon, steps";moreOpen=!!(rec.for||rec.mins||rec.icon||rec.waiting||rec.notes||(rec.steps||[]).length);
   }else{
@@ -839,7 +933,11 @@ function openSheet(type,rec,preset){
       const fv=$("#fFor").value;if(fv)data.for=fv;else delete data.for;
       const dl=$("#fDeadline").value;if(dl)data.deadline=dl;else delete data.deadline;
       const wt=$("#fWait").value.trim();if(wt)data.waiting=wt;else delete data.waiting;
-      const nt=$("#fNotes").value.trim();if(nt)data.notes=nt;else delete data.notes}
+      const nt=$("#fNotes").value.trim();if(nt)data.notes=nt;else delete data.notes;
+      const sz=picked("fSize","s","");if(sz)data.size=sz;else delete data.size;
+      if(picked("fAi","a","0")==="1")data.ai=true;else delete data.ai;
+      const sl=$("#fSlot")?$("#fSlot").value:"";if(sl)data.slot=sl;else delete data.slot;
+      if(d!==(rec.date||null)){delete data.carries;delete data.from}}
     else{const s=tpv("fStart"),en=tpv("fEnd"),days=[...form.querySelectorAll('#fDays [aria-pressed="true"]')].map(b=>+b.dataset.d);
       if(!days.length){err.textContent="Pick at least one day.";return}if(toMin(en)<=toMin(s)){err.textContent="End time needs to be after the start time.";return}
       data={...strip(rec),title:t,start:s,end:en,days,kind:k,skips:rec.skips||[]};const u=$("#fUntil").value;if(u)data.until=u;else delete data.until}
@@ -850,7 +948,8 @@ function openSheet(type,rec,preset){
       const nt=$("#fNotes").value.trim();if(nt)data.notes=nt;else delete data.notes;
       const lc=$("#fLoc").value.trim();if(lc)data.location=lc;else delete data.location}
     if(type!=="routines"){if($("#fStepIn").value.trim())addStep();const st=[...form.querySelectorAll("#fSteps .srow input")].map(i=>({text:i.value.trim(),done:i.dataset.done==="1"})).filter(x=>x.text);if(st.length)data.steps=st;else delete data.steps}
-    delete data.example;save(type,rec.id||uid(),data);
+    delete data.example;const saved=save(type,rec.id||uid(),data);
+    if(type==="blocks"||(type==="tasks"&&data.size&&data.date))saved.then(()=>rebalanceFor(data.date));
     if(type==="blocks"&&preset.taskId){const tk=S.tasks.find(x=>x.id===preset.taskId);if(tk&&(tk.date!==data.date||tk.inbox!==false))save("tasks",tk.id,{...strip(tk),date:data.date,inbox:false})}
     if(isNew&&preset.title&&preset.title===(S.qa||"").trim())S.qa="";
     closeSheet();toast(isNew?"Added":"Saved")};
@@ -968,6 +1067,9 @@ document.addEventListener("click",e=>{
     return}
   const fb=e.target.closest("[data-focus]");if(fb){const[col,id,date]=fb.dataset.focus.split(":");const r=S[col].find(x=>x.id===id);if(r)startFocus(col,r,date);return}
   const dk=e.target.closest("[data-dock]");if(dk){openDock(dk.dataset.dock);return}
+  const se=e.target.closest("[data-session]");if(se){openSession(se.dataset.session,!!se.dataset.sesfocus);return}
+  const sle=e.target.closest("[data-slotedit]");if(sle){openSlot((S.slots||[]).find(x=>x.id===sle.dataset.slotedit));return}
+  if(e.target.closest("[data-slotnew]")){openSlot(null);return}
   const op=e.target.closest("[data-open]");if(op){openDock(op.dataset.open);return}
   /* Home */
   const sd=e.target.closest("[data-sel]");if(sd){const d=sd.dataset.sel;if(d!==homeSel()){setSel(d);S.earlier=false;render()}return}
@@ -1041,7 +1143,7 @@ setInterval(()=>{applyTint();if($("#sheetRoot").innerHTML||$("#focus"))return;
 
 /* ---------- store: cached data shows at once, fresh data follows ---------- */
 function applyData(d){
-  S.tasks=d.tasks||[];S.blocks=d.blocks||[];S.routines=d.routines||[];
+  S.tasks=d.tasks||[];S.blocks=d.blocks||[];S.routines=d.routines||[];S.slots=d.slots||[];
   const st=d.settings||{};S.work={start:st.workStart||"09:00",end:st.workEnd||"16:00"};S.lead=st.leadMin??10;S.morning=st.morning||null;
   if(st.palette&&st.palette!==S.palette)applyPalette(st.palette);
 }
@@ -1099,6 +1201,7 @@ function openSettings(){
   sheet("Settings",`<form class="in" id="sForm"><h3>Settings</h3>
   <div class="f"><span class="lb">Colours</span><div class="pal" id="sPal">${PALS.map(([k,l,c])=>`<button type="button" data-p="${k}" aria-pressed="${S.palette===k}"><span class="sw">${c.map(x=>`<i style="background:${x}"></i>`).join("")}</span>${l}</button>`).join("")}</div></div>
   <div class="two">${tp("sStart",S.work.start,"Work day starts")}${tp("sEnd",S.work.end,"Work day ends")}</div>
+  <div class="f"><span class="lb">Work sessions</span>${slotsHtml()}</div>
   <div class="f"><span class="lb">Default reminder</span>${optsHtml("sLead",[5,10,15,30].map(n=>[n,n+" min"]),S.lead,"n")}</div>
   <div class="f"><span class="lb">Morning planning alert</span>${optsHtml("sMorn",["off","07:00","07:30","08:00","08:30"].map(v=>[v,v==="off"?"Off":v]),S.morning||"off","m")}</div>
   <div class="f"><span class="lb">Phone alerts</span>${alertHtml}</div>

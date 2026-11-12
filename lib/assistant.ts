@@ -5,7 +5,7 @@ import { loadData, type Item } from "./store";
 import { localNow } from "./schedule";
 
 // Tools Gemini may propose. Reading tools are left out: the plan is sent with the request instead.
-export const WRITE_TOOLS = ["add_block", "add_task", "add_routine", "update_item", "complete_task", "skip_routine", "delete_item"];
+export const WRITE_TOOLS = ["add_block", "add_task", "add_routine", "add_slot", "update_item", "complete_task", "skip_routine", "delete_item"];
 // gemini-3.8-flash is the current free Flash model; Flash-Lite answers faster and is the backup.
 const MODELS = [process.env.GEMINI_MODEL, "gemini-3.8-flash", "gemini-flash-lite-latest"].filter(Boolean) as string[];
 const DAYN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -30,6 +30,9 @@ const FIELD_PROPS = {
   days: { type: "array", items: { type: "integer" }, description: "Routines: 1=Mon … 7=Sun" },
   until: { type: "string", description: "Routines: last date YYYY-MM-DD" },
   remind: { type: "integer", description: "Minutes before the start. -1 for none." },
+  size: { type: "string", enum: ["quick", "medium", "big"], description: "Tasks: rough size" },
+  ai: { type: "boolean", description: "Tasks: true when Claude is doing it" },
+  slot: { type: "string", description: "Tasks: work slot id. Empty string for the first session." },
 };
 function declarations() {
   return TOOLS.filter((t) => WRITE_TOOLS.includes(t.name)).map((t) => {
@@ -55,9 +58,11 @@ function describe(name: string, a: Record<string, unknown>, find: (col: string, 
     case "add_block":
       return { ...base, summary: `Add ${a.title}`, detail: join(dLabel(a.date), span(a), a.location) };
     case "add_task":
-      return { ...base, summary: `Add task: ${a.title}`, detail: join(a.date ? `Planned ${dLabel(a.date)}` : "Inbox", a.deadline && `Deadline ${dLabel(a.deadline)}`, a.priority === "top" && "Priority", a.for && `For ${dLabel(a.for)}`) };
+      return { ...base, summary: `Add task: ${a.title}`, detail: join(a.date === "next" ? "Next work session" : a.date ? `${dLabel(a.date)} work session` : "Inbox", a.size && `${a.size}`, a.deadline && `Deadline ${dLabel(a.deadline)}`, a.priority === "top" && "Priority", a.for && `For ${dLabel(a.for)}`) };
     case "add_routine":
       return { ...base, summary: `Add routine: ${a.title}`, detail: join(((a.days as number[]) || []).map((n) => DAYN[n - 1]).join(" "), span(a), a.location) };
+    case "add_slot":
+      return { ...base, summary: `Add work slot: ${a.title}`, detail: join(((a.days as number[]) || []).map((n) => DAYN[n - 1]).join(" "), span(a)) };
     case "update_item": {
       const it = find(String(a.collection), a.id), f = (a.fields || {}) as Record<string, unknown>;
       const was = it ? join(it.date && dLabel(it.date), span(it)) : "";
@@ -90,7 +95,9 @@ How to answer:
 - Use ids exactly as they appear in the plan below. Never invent an id. If you can't tell which item she means, make no call and ask a short question.
 - "Tomorrow", "Thursday", "next week" mean dates relative to today. A weekday with no week means the next one coming.
 - If she gives a start but no end, make blocks 1 hour long.
-- When she asks to move or update a task or block, it hasn't been done yet: move it to the next free slot from now that fits, without clashing with what's already planned.
+- Tasks have no times. A task goes into a day's work session: set its planned date and it drops into that day's session list. Use date "next" when she wants it done next or gives no day but clearly wants it on the plan. Only use add_block for appointments or things she gives a real time for.
+- Set size (quick, medium, big) only when she says how big it is or it's obvious. Set ai true when she says Claude or AI is doing it.
+- When she asks to move or update a task, it hasn't been done yet: move it to the next work session from now (date "next", or the day she names). When she moves an appointment, keep it at a real time without clashing with other appointments; the sessions reshape around it.
 - Prep tasks name the date they are for in the title, e.g. "Choose a pre-loved toy for Leo to donate for Fri 4 Dec", and set "for" to that date.
 - Pick the kind that fits: work, family (kids, school, home life), admin (errands, bills, appointments), me (rest, exercise, hobbies).
 - Put a place or address she mentions in location.
@@ -165,12 +172,12 @@ export async function propose(text: string): Promise<{ reply: string; actions: A
 }
 
 export async function apply(actions: { name: string; args: Record<string, unknown> }[]) {
-  const done: { name: string; ok: boolean; error?: string }[] = [];
+  const done: { name: string; ok: boolean; error?: string; moved?: unknown[] }[] = [];
   for (const a of actions.slice(0, 12)) {
     if (!WRITE_TOOLS.includes(a.name)) { done.push({ name: a.name, ok: false, error: "Not allowed." }); continue; }
     try {
-      await call(a.name, a.args || {});
-      done.push({ name: a.name, ok: true });
+      const out = (await call(a.name, a.args || {})) as { moved?: unknown[] };
+      done.push({ name: a.name, ok: true, ...(out && Array.isArray(out.moved) && out.moved.length ? { moved: out.moved } : {}) });
     } catch (e) {
       done.push({ name: a.name, ok: false, error: e instanceof Error ? e.message : "That change couldn't be saved." });
     }

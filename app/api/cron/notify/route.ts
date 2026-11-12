@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { loadData, updateData } from "@/lib/store";
+import { updateData } from "@/lib/store";
 import { itemsFor, localNow, shiftDate, toMin } from "@/lib/schedule";
 import { sendToAll } from "@/lib/push";
 import { safeEqual } from "@/lib/auth";
+import { loadRolled } from "@/lib/slots";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Not allowed.", reason }, { status: 401 });
   }
 
-  const data = await loadData();
+  // Moves yesterday's unticked tasks to today's first session overnight, before any alert goes out.
+  const data = await loadRolled();
   // Record that a check ran, so the app can warn when the scheduler stops. Saved at most every
   // 30 minutes to keep Blob writes low; the app warns after 45 minutes without a check.
   const staleCheck = !data.lastCheck || Date.now() - data.lastCheck > 30 * 60000;
@@ -90,7 +92,9 @@ export async function GET(req: Request) {
   if (morningDue) {
     const today = itemsFor(data, now.date, now.wd);
     const tops = data.tasks.filter((t) => t.priority === "top" && !t.done && t.date && String(t.date) <= now.date).length;
+    const moved = data.tasks.filter((t) => !t.done && t.carries && t.date === now.date && t.from && String(t.from) < now.date).length;
     const parts = [`${today.length} on the plan`, tops ? `${tops} top task${tops > 1 ? "s" : ""}` : "no Top 3 yet"];
+    if (moved) parts.push(`${moved} task${moved > 1 ? "s" : ""} moved from last work day`);
     const r = await sendToAll(data.subs, { title: "Plan your day", body: parts.join(" · "), tag: mkey }, data);
     r.dead.forEach((e) => dead.add(e));
   }

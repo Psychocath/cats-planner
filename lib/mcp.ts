@@ -1,11 +1,13 @@
 // A small MCP server (Streamable HTTP, stateless, JSON responses) so Claude can read and change the planner.
-import { loadData, updateData, type Collection, type Data, type Item } from "./store";
+import { updateData, type Collection, type Data, type Item } from "./store";
 import { itemsFor, localNow, toMin } from "./schedule";
+import { loadRolled, nextSession, rebalance, sessionJson, sessionsFor, SIZES } from "./slots";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const KINDS = ["work", "family", "admin", "me"];
-const COLS: Collection[] = ["tasks", "blocks", "routines"];
+const COLS: Collection[] = ["tasks", "blocks", "routines", "slots"];
+const SIZEK = Object.keys(SIZES);
 const DAYN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -51,7 +53,7 @@ export const TOOLS = [
   {
     name: "get_plan",
     description:
-      "Read the planner for one or more days: time blocks and routines (with ids), tasks due, Top 3, and free time in the work day. Dates are in Cape Town time.",
+      "Read the planner for one or more days: appointments (time blocks) and routines with ids, tasks, Top 3, and the day's work sessions. A work session is a window that holds a list of tasks with no set times; appointments and routines cut its windows. Each session shows its tasks, room left and whether its sized tasks look like more than fits. Dates are in Cape Town time.",
     inputSchema: {
       type: "object",
       properties: {
@@ -67,7 +69,7 @@ export const TOOLS = [
   },
   {
     name: "add_block",
-    description: "Add a one-off time block on a date.",
+    description: "Add a one-off time block on a date. Use it for appointments and anything with a real time. Work sessions that day split around it, and if sized tasks no longer fit, the last-added ones move to the next session with room (the result lists what moved; tell Cat).",
     inputSchema: {
       type: "object",
       required: ["title", "date", "start", "end"],
@@ -88,7 +90,7 @@ export const TOOLS = [
   },
   {
     name: "add_task",
-    description: "Add a task. date is the day Cat plans to do it; leave it empty to put the task in the Inbox. deadline is the last day it can be done. priority 'top' makes it one of that day's priorities (max 3 per day).",
+    description: "Add a task. Tasks need no time: a task with a planned date drops into that day's work session (or the slot you name). Set date to 'next' to put it in the next work session with room from now. Leave date empty for the Inbox. deadline is the last day it can be done. priority 'top' makes it one of that day's priorities (max 3 per day). Unticked tasks move to the next work day's first session overnight.",
     inputSchema: {
       type: "object",
       required: ["title"],
@@ -98,7 +100,10 @@ export const TOOLS = [
         deadline: str("The last day it can be done, YYYY-MM-DD (optional). Separate from the planned day."),
         waiting: str("What has to happen first, if the task is blocked (optional)."),
         priority: { type: "string", enum: ["top", "normal"] },
-        mins: { type: "integer", minimum: 5, description: "Estimated minutes (optional)." },
+        mins: { type: "integer", minimum: 5, description: "Estimated minutes (optional, rarely needed: prefer size)." },
+        size: { type: "string", enum: SIZEK, description: "Rough size (optional): quick, medium or big. Only used to warn when a session looks full and to move overflow." },
+        ai: { type: "boolean", description: "True when Claude is doing the task for Cat (it shows as 'Claude working' and counts less against the session)." },
+        slot: str("Work slot id from get_plan to put it in (optional). Leave out to use the first session that day."),
         for: str("The event date this task is preparation for, YYYY-MM-DD (optional). Shows as a deadline on that day."),
         steps: { type: "array", items: { type: "string" }, description: "Small steps to break it into (optional)." },
       },
@@ -125,15 +130,30 @@ export const TOOLS = [
     },
   },
   {
+    name: "add_slot",
+    description: "Add a weekly work slot: a window on given weekdays that holds tasks. Until Cat has any slots, each weekday's work hours act as one 'Work session'; adding the first slot replaces that default, so add every window she wants.",
+    inputSchema: {
+      type: "object",
+      required: ["title", "start", "end", "days"],
+      properties: {
+        title: str("Name, e.g. 'Client work' or 'Admin'."),
+        start: str("HH:MM, 24-hour"),
+        end: str("HH:MM, 24-hour"),
+        days: { type: "array", items: { type: "integer", minimum: 1, maximum: 7 }, description: "1=Mon … 7=Sun" },
+        kind: { type: "string", enum: KINDS },
+      },
+    },
+  },
+  {
     name: "update_item",
-    description: "Change fields on an existing block, task or routine. Only the fields you pass change.",
+    description: "Change fields on an existing block, task, routine or slot. Only the fields you pass change. Moving a task to another day: change date (and slot if needed); it drops into that day's session. Changing a block's time or day reshapes the work sessions and may move overflow (listed in the result).",
     inputSchema: {
       type: "object",
       required: ["collection", "id", "fields"],
       properties: {
         collection: { type: "string", enum: COLS },
         id: str("Item id from get_plan or list_tasks."),
-        fields: { type: "object", description: "e.g. {title, date (tasks: planned day), deadline (tasks: last possible day, null to clear), waiting (tasks: what it is blocked on, null to clear), for (tasks: event date YYYY-MM-DD), start, end, kind, notes, location (blocks and routines; null to clear), until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
+        fields: { type: "object", description: "e.g. {title, date (tasks: planned day), deadline (tasks: last possible day, null to clear), waiting (tasks: what it is blocked on, null to clear), for (tasks: event date YYYY-MM-DD), start, end, kind, notes, location (blocks and routines; null to clear), until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), size (tasks: quick, medium, big; null to clear), ai (tasks: true when Claude is doing it), slot (tasks: slot id; null for the first session), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
       },
     },
   },
@@ -153,7 +173,7 @@ export const TOOLS = [
   },
   {
     name: "delete_item",
-    description: "Delete a block, task or routine for good. Confirm with the person first.",
+    description: "Delete a block, task, routine or slot for good. Confirm with the person first.",
     inputSchema: { type: "object", required: ["collection", "id"], properties: { collection: { type: "string", enum: COLS }, id: str("Item id.") } },
   },
   {
@@ -180,13 +200,14 @@ function freeWork(d: Data, date: string) {
   return Math.max(0, we - ws - busy);
 }
 
+const TASK_KEYS = ["id", "title", "date", "slot", "size", "ai", "deadline", "for", "waiting", "priority", "mins", "actual", "done", "steps", "carries", "from"];
 const pick = (i: Item, keys: string[]) => Object.fromEntries(keys.filter((k) => i[k] !== undefined && i[k] !== null).map((k) => [k, i[k]]));
 
 export async function call(name: string, a: Record<string, unknown>) {
   const now = localNow();
   switch (name) {
     case "get_plan": {
-      const d = await loadData();
+      const d = await loadRolled();
       const start = a.date ? String(a.date) : now.date;
       need(DATE.test(start), "Use dates like 2026-11-06.");
       const n = Math.min(14, Math.max(1, Number(a.days) || 1));
@@ -197,33 +218,38 @@ export async function call(name: string, a: Record<string, unknown>) {
         const routines = d.routines
           .filter((r) => ((r.days as number[]) || []).includes(wd) && !((r.skips as string[]) || []).includes(date) && (!r.from || date >= String(r.from)) && (!r.until || date <= String(r.until)))
           .map((r) => ({ ...pick(r, ["id", "title", "start", "end", "kind", "remind", "remind2", "buffer", "location", "notes", "steps", "until"]), type: "routine" }));
-        const tasks = d.tasks.filter((t) => t.date === date || t.for === date || t.deadline === date).map((t) => pick(t, ["id", "title", "date", "deadline", "for", "waiting", "priority", "mins", "actual", "done", "steps"]));
+        const tasks = d.tasks.filter((t) => t.date === date || t.for === date || t.deadline === date).map((t) => pick(t, TASK_KEYS));
         days.push({
           date,
           weekday: DAYN[wd - 1],
           schedule: ([...blocks, ...routines] as Record<string, unknown>[]).sort((x, y) => toMin(String(x.start)) - toMin(String(y.start))),
           tasks,
           free_work_minutes: wd <= 5 ? freeWork(d, date) : null,
+          sessions: sessionsFor(d, date, date === now.date ? now.minute : null).map(sessionJson),
         });
       }
-      return { today: now.date, now: `${String(Math.floor(now.minute / 60)).padStart(2, "0")}:${String(now.minute % 60).padStart(2, "0")}`, settings: d.settings, days };
+      return { today: now.date, now: `${String(Math.floor(now.minute / 60)).padStart(2, "0")}:${String(now.minute % 60).padStart(2, "0")}`, settings: d.settings, slots: d.slots.length ? d.slots.map((x) => pick(x, ["id", "title", "start", "end", "days", "kind"])) : "No slots set: each weekday's work hours act as one 'Work session' (id 'work').", days };
     }
     case "list_tasks": {
-      const d = await loadData();
-      return d.tasks.filter((t) => a.include_done || !t.done).map((t) => pick(t, ["id", "title", "date", "deadline", "for", "waiting", "priority", "mins", "actual", "done", "steps"]));
+      const d = await loadRolled();
+      return d.tasks.filter((t) => a.include_done || !t.done).map((t) => pick(t, TASK_KEYS));
     }
     case "add_block": {
       need(String(a.title || "").trim(), "Give the block a title.");
       need(DATE.test(String(a.date)), "Use dates like 2026-11-06.");
       checkTimes(a.start, a.end);
       const rec: Item = { id: uid(), title: String(a.title).trim(), date: String(a.date), start: String(a.start), end: String(a.end), kind: kindOf(a.kind), ...extras(a) };
-      await updateData((d) => void d.blocks.push(rec));
-      return { added: rec };
+      const moved = await updateData((d) => {
+        d.blocks.push(rec);
+        return rebalance(d, rec.date as string);
+      });
+      return { added: rec, moved };
     }
     case "add_task": {
       need(String(a.title || "").trim(), "Give the task a title.");
-      const date = a.date ? String(a.date) : null;
-      need(!date || DATE.test(date), "Use dates like 2026-11-06.");
+      const next = a.date === "next";
+      let date = a.date && !next ? String(a.date) : null;
+      need(!date || DATE.test(date), "Use dates like 2026-11-06, or 'next' for the next work session.");
       const priority = a.priority === "top" ? "top" : "normal";
       const rec: Item = { id: uid(), title: String(a.title).trim(), date, priority, mins: Number(a.mins) || null, done: false, createdAt: Date.now() };
       const st = toSteps(a.steps);
@@ -231,13 +257,34 @@ export async function call(name: string, a: Record<string, unknown>) {
       if (a.for) { need(DATE.test(String(a.for)), "Use dates like 2026-12-04 for 'for'."); rec.for = String(a.for); }
       if (a.deadline) { need(DATE.test(String(a.deadline)), "Use dates like 2026-12-04 for deadline."); rec.deadline = String(a.deadline); }
       if (a.waiting) rec.waiting = String(a.waiting).trim().slice(0, 200);
-      if (!date) rec.inbox = true;
-      await updateData((d) => {
+      if (SIZEK.includes(String(a.size))) rec.size = String(a.size);
+      if (a.ai) rec.ai = true;
+      if (a.slot && a.slot !== "work") rec.slot = String(a.slot);
+      if (!date && !next) rec.inbox = true;
+      return updateData((d) => {
+        if (next) {
+          const at = nextSession(d, rec);
+          need(at, "There's no work session in the next 2 weeks to put it in.");
+          date = at!.date;
+          rec.date = date;
+          if (at!.slot) rec.slot = at!.slot;
+          else delete rec.slot;
+        }
         if (priority === "top" && date) {
           need(d.tasks.filter((t) => t.date === date && t.priority === "top" && !t.done).length < 3, "That day already has 3 Top tasks.");
         }
         d.tasks.push(rec);
+        const moved = date && rec.size ? rebalance(d, date) : [];
+        return { added: rec, moved };
       });
+    }
+    case "add_slot": {
+      need(String(a.title || "").trim(), "Give the slot a name.");
+      checkTimes(a.start, a.end);
+      const days = [...new Set(((a.days as unknown[]) || []).map(Number))].filter((n) => n >= 1 && n <= 7).sort();
+      need(days.length, "Pick at least one weekday (1=Mon … 7=Sun).");
+      const rec: Item = { id: uid(), title: String(a.title).trim(), start: String(a.start), end: String(a.end), days, kind: kindOf(a.kind) };
+      await updateData((d) => void d.slots.push(rec));
       return { added: rec };
     }
     case "add_routine": {
@@ -251,7 +298,7 @@ export async function call(name: string, a: Record<string, unknown>) {
     }
     case "update_item": {
       const col = a.collection as Collection;
-      need(COLS.includes(col), "collection must be tasks, blocks or routines.");
+      need(COLS.includes(col), "collection must be tasks, blocks, routines or slots.");
       const f = (a.fields || {}) as Record<string, unknown>;
       delete f.id;
       return updateData((d) => {
@@ -273,11 +320,25 @@ export async function call(name: string, a: Record<string, unknown>) {
         if (f.until === null || f.until === "") delete next.until;
         else if (f.until !== undefined) need(DATE.test(String(f.until)), "Use dates like 2026-12-31 for until.");
         if (f.steps !== undefined) { const st = toSteps(f.steps); if (st && st.length) next.steps = st; else delete next.steps; }
+        if (col === "tasks") {
+          if (f.size === null || f.size === "") delete next.size;
+          else if (f.size !== undefined) { need(SIZEK.includes(String(f.size)), "size must be quick, medium or big."); next.size = String(f.size); }
+          if (f.ai === false || f.ai === null) delete next.ai;
+          if (f.slot === null || f.slot === "" || f.slot === "work") delete next.slot;
+          // Re-planned by hand, so it no longer counts as moved from an earlier day.
+          if (f.date !== undefined && f.date !== d[col][i].date) { delete next.carries; delete next.from; }
+        }
+        if (col === "slots" && f.days !== undefined) {
+          const days = [...new Set(((f.days as unknown[]) || []).map(Number))].filter((n) => n >= 1 && n <= 7).sort();
+          need(days.length, "Pick at least one weekday (1=Mon … 7=Sun).");
+          next.days = days;
+        }
         if (f.remind === null) delete next.remind;
         else if (f.remind !== undefined) next.remind = Math.max(-1, Math.min(10080, Math.round(Number(f.remind))));
         delete next.example;
         d[col][i] = next as Item;
-        return { updated: next };
+        const moved = (col === "blocks" || (col === "tasks" && next.size)) && next.date ? rebalance(d, String(next.date)) : [];
+        return { updated: next, moved };
       });
     }
     case "complete_task":
@@ -299,7 +360,7 @@ export async function call(name: string, a: Record<string, unknown>) {
       });
     case "delete_item": {
       const col = a.collection as Collection;
-      need(COLS.includes(col), "collection must be tasks, blocks or routines.");
+      need(COLS.includes(col), "collection must be tasks, blocks, routines or slots.");
       return updateData((d) => {
         const before = d[col].length;
         d[col] = d[col].filter((x) => x.id !== a.id);
