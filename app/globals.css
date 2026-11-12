@@ -952,3 +952,83 @@ body.dockopen .fab,body.sheetopen .fab{display:none}
 .gap.ses-w .ic{width:16px;height:16px;flex:none}
 .sheet .trow .tmain{flex:1;min-width:0;display:grid}
 .sheet .trow .tlink{flex:none;min-height:36px;font-size:.86rem}
+
+/* ---------- Home header: digital clock, date and weather ---------- */
+body.homehead .daterow h1{overflow:visible;white-space:normal}
+body.homehead #dmain{display:block;font-size:2.2rem;line-height:1.05;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+body.homehead #dsub{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.wxp{display:inline-flex;align-items:center;gap:7px;font-size:.84rem;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:3px 10px 3px 8px;line-height:1.2}
+.wxp .ic{width:20px;height:20px;color:var(--accent);flex:none}
+.wxp small{display:block;font-size:.74rem;color:var(--muted)}
+.htop{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
+.hgreet{margin:0;font-family:var(--f-display);font-weight:700;font-size:1.25rem;line-height:1.2;min-width:0}
+.shopbtn{position:relative;flex:none;display:grid;justify-items:center;gap:2px;min-width:64px;min-height:52px;padding:6px 10px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);font:inherit}
+.shopbtn .ic{width:22px;height:22px}
+.shopbtn span{font-size:.78rem;font-weight:700}
+.shopbtn .badge{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;border-radius:10px;background:var(--now);color:#fff;font-size:.72rem;font-style:normal;font-weight:800;display:grid;place-items:center;padding:0 5px}
+/* add row: manual + beside the quick add box, which is the main control */
+.addrow{display:flex;gap:8px;align-items:stretch}
+.madd{flex:none;width:52px;border:1.5px solid var(--line);border-radius:14px;background:var(--surface);color:var(--accent);display:grid;place-items:center}
+.madd .ic{width:24px;height:24px;stroke-width:2.4}
+.addrow .qadd{flex:1;min-width:0;border:2px solid var(--accent);box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 16%,transparent);padding-left:14px}
+.addrow .qgo{background:transparent;background-image:none;color:var(--accent);border:0}
+.hmonth .mday{min-height:44px}
+
+/* ---------- My day: markers, the work day band, sessions and client groups ---------- */
+.myday .card.agenda{padding:0;overflow:hidden}
+.myday .ag{padding:0 12px;align-items:flex-start}
+.myday .ag .at{padding-top:11px}
+.myday .ag .check{margin-top:6px}
+.myday .ag.nowm{align-items:center}
+.myday .ag.nowm .at{padding-top:0}
+.mk{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;background:color-mix(in srgb,var(--sunk) 70%,transparent);font-size:.8rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line)}
+.mk .at{flex:none;width:44px;letter-spacing:0;text-transform:none;font-size:.92rem;color:var(--ink)}
+.mk.work{color:var(--k-work)}
+.mk em{margin-left:auto;font-style:normal;text-transform:none;letter-spacing:0;font-weight:600;font-size:.8rem;text-align:right}
+.band{border-left:3px solid var(--k-work)}
+.ag.none .nt{flex:1;color:var(--muted);font-size:.9rem;padding:11px 0}
+.myday .ag.past{opacity:.72}
+.pastl{margin-left:8px;font-size:.68rem;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 7px;vertical-align:2px}
+.ag.ses-r .kd{border-radius:3px;background:transparent;border:2px dashed var(--kc);width:12px;height:12px;margin-top:5px}
+.esteps{display:grid;gap:2px;margin-top:4px}
+.esteps span{font-size:.84rem;color:var(--muted);display:flex;gap:7px;align-items:center}
+.esteps span::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--muted);flex:none}
+.esteplist{margin:0;padding:8px 14px 8px 30px;display:grid;gap:4px;color:var(--ink)}
+.scard{margin:2px 12px 12px 66px;border:1.5px dashed color-mix(in srgb,var(--kc) 50%,transparent);border-radius:14px;padding:10px 12px;background:var(--surface)}
+.sch{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;font-size:.92rem}
+.sch span:not(.pill){color:var(--muted);font-size:.82rem;font-weight:600}
+.wchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.wchip{font-size:.78rem;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--kb);color:var(--kc)}
+.wchip.gone{opacity:.6;text-decoration:line-through}
+.cgrp{margin:12px 0 2px;font-size:.76rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--k-work)}
+.cgrp.me{color:var(--k-me)}
+.cgrp span{color:var(--muted);font-weight:600;text-transform:none;letter-spacing:0;margin-left:4px}
+.cgrp+.trow{border-top:0}
+.scard .trow{border-bottom:0;border-top:1px solid var(--line)}
+.scard .tcol{flex:1;min-width:0}
+.tsteps{display:grid;margin:2px 0 4px}
+.tsteps .step{display:flex;align-items:center;gap:10px;min-height:40px;font-size:.9rem;color:var(--ink)}
+.tsteps .step input{width:20px;height:20px;min-height:0;margin:0;accent-color:var(--accent);flex:none}
+.tsteps .step.done span{text-decoration:line-through;color:var(--muted)}
+.scard .sadd{min-height:36px;font-size:.86rem;margin-top:4px}
+.scard .sesn{margin:6px 0 0;font-size:.84rem;color:var(--muted)}
+/* ---------- shopping list ---------- */
+.shopadd{display:flex;gap:8px;flex-wrap:wrap}
+.shopadd input{flex:1 1 120px;min-width:0}
+.shopadd button{min-height:48px;padding:0 16px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-weight:700}
+.shopg{display:grid;gap:14px}
+.shopg .store{display:grid;gap:2px}
+.shopg .sth{display:flex;justify-content:space-between;align-items:baseline}
+.shopg .step{display:flex;align-items:center;gap:10px;min-height:40px}
+.shopg .step input{width:20px;height:20px;min-height:0;margin:0;accent-color:var(--accent)}
+.shopg .step.done span{text-decoration:line-through;color:var(--muted)}
+/* Home packs tighter so My day starts on the first screen */
+.homev{gap:14px;padding-top:10px}
+.homev .htop,.homev .qadd-w,.homev .wstrip{margin-top:0}
+.homev .sec.myday{margin-top:0}
+.homev .hmonth .mgrid{margin-top:6px}
+.hmonth .mday{min-height:40px;padding:3px 2px}
+.hmonth .mday .bars{gap:2px}
+.mk .ml{white-space:nowrap}
+.mk em{white-space:nowrap}
+.hmonth .mday .bars i:nth-child(n+4){display:none}.hmonth .mday .bars i{height:4px}

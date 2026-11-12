@@ -11,6 +11,8 @@ export const loadOf = (t: Item) => {
 };
 
 const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+/** Shopping lists are tasks named "<Store> shopping" (or marked shop); they live in the shopping list, not in sessions. */
+export const isShop = (t: Item) => !!t.shop || /\bshopping\s*$/i.test(String(t.title || ""));
 export const wdOf = (date: string) => shiftDate(date, 0).wd;
 
 export type SlotDef = { id: string; title: string; start: string; end: string; kind: string };
@@ -66,7 +68,7 @@ export function sessionsFor(d: Data, date: string, nowMin: number | null = null)
   const open = (s: Session) => s.windows.length && (nowMin === null || s.windows.some(([, y]) => y > nowMin));
   const timed = timedIds(d, date);
   d.tasks
-    .filter((t) => t.date === date && !timed.has(t.id))
+    .filter((t) => t.date === date && !timed.has(t.id) && !isShop(t))
     .sort(order)
     .forEach((t) => {
       const s = ss.find((x) => x.id === t.slot && open(x)) || ss.find(open) || ss.find((x) => x.windows.length) || ss[0];
@@ -100,7 +102,7 @@ export function rollOver(d: Data, today: string) {
   const target = firstWorkday(today);
   let n = 0;
   for (const t of d.tasks) {
-    if (t.done || !t.date || String(t.date) >= today) continue;
+    if (t.done || !t.date || String(t.date) >= today || isShop(t)) continue;
     const from = String(t.date);
     t.from = from;
     t.carries = (Number(t.carries) || 0) + 1;
@@ -112,7 +114,7 @@ export function rollOver(d: Data, today: string) {
   }
   return n;
 }
-export const needsRoll = (d: Data, today: string) => d.tasks.some((t) => !t.done && t.date && String(t.date) < today);
+export const needsRoll = (d: Data, today: string) => d.tasks.some((t) => !t.done && t.date && String(t.date) < today && !isShop(t));
 
 /** Loads the planner, first moving any unticked tasks from earlier days. */
 export async function loadRolled(): Promise<Data> {

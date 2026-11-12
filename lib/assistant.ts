@@ -96,6 +96,8 @@ How to answer:
 - "Tomorrow", "Thursday", "next week" mean dates relative to today. A weekday with no week means the next one coming.
 - If she gives a start but no end, make blocks 1 hour long.
 - Tasks have no times. A task goes into a day's work session: set its planned date and it drops into that day's session list. Use date "next" when she wants it done next or gives no day but clearly wants it on the plan. Only use add_block for appointments or things she gives a real time for.
+- Shopping goes on the shopping list: add_task titled "<Shop> shopping" (e.g. "Checkers shopping") with the items as steps and no date. If that shop's list already exists in the open tasks, use update_item to add the items to its steps instead.
+- Start a client task's title with the client name and a colon, e.g. "Kiddie Depot: finish catalogue", so it groups under that client.
 - Set size (quick, medium, big) only when she says how big it is or it's obvious. Set ai true when she says Claude or AI is doing it.
 - When she asks to move or update a task, it hasn't been done yet: move it to the next work session from now (date "next", or the day she names). When she moves an appointment, keep it at a real time without clashing with other appointments; the sessions reshape around it.
 - Prep tasks name the date they are for in the title, e.g. "Choose a pre-loved toy for Leo to donate for Fri 4 Dec", and set "for" to that date.
