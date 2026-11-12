@@ -32,6 +32,7 @@ const FIELD_PROPS = {
   remind: { type: "integer", description: "Minutes before the start. -1 for none." },
   size: { type: "string", enum: ["quick", "medium", "big"], description: "Tasks: rough size" },
   ai: { type: "boolean", description: "Tasks: true when Claude is doing it" },
+  done: { type: "boolean", description: "Tasks: true when it is finished" },
   slot: { type: "string", description: "Tasks: work slot id. Empty string for the first session." },
 };
 function declarations() {
@@ -103,6 +104,7 @@ How to answer:
 - Prep tasks name the date they are for in the title, e.g. "Choose a pre-loved toy for Leo to donate for Fri 4 Dec", and set "for" to that date.
 - Pick the kind that fits: work, family (kids, school, home life), admin (errands, bills, appointments), me (rest, exercise, hobbies).
 - Put a place or address she mentions in location.
+- When she says something is finished ("I sent Nico the message", "billboard is done"), tick it with complete_task. If several open tasks match, tick the closest and say which.
 - Only delete when she clearly asks for it.
 - Along with the calls, write one short plain sentence saying what you've set up. No emoji, no em dashes.`;
 }

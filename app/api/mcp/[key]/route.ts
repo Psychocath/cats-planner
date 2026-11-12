@@ -4,6 +4,8 @@ import { safeEqual } from "@/lib/auth";
 import { handleRpc } from "@/lib/mcp";
 
 export const dynamic = "force-dynamic";
+// A stuck request ends after 30 seconds instead of Vercel's default of 300.
+export const maxDuration = 30;
 
 async function keyOk(key: string) {
   const d = await loadData();

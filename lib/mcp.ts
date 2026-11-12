@@ -169,7 +169,7 @@ export const TOOLS = [
       properties: {
         collection: { type: "string", enum: COLS },
         id: str("Item id from get_plan or list_tasks."),
-        fields: { type: "object", description: "e.g. {title, date (tasks: planned day, or 'next' for the next work session with room), deadline (tasks: last possible day, null to clear), waiting (tasks: what it is blocked on, null to clear), for (tasks: event date YYYY-MM-DD), start, end, kind, notes, location (blocks and routines; null to clear), until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), size (tasks: quick, medium, big; null to clear), ai (tasks: true when Claude is doing it), slot (tasks: slot id; null for the first session), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
+        fields: { type: "object", description: "e.g. {title, date (tasks: planned day, or 'next' for the next work session with room), deadline (tasks: last possible day, null to clear), waiting (tasks: what it is blocked on, null to clear), for (tasks: event date YYYY-MM-DD), start, end, kind, notes, location (blocks and routines; null to clear), until (routines: last date YYYY-MM-DD, null to repeat forever), steps ([text] or [{text, done}]; [] to clear), size (tasks: quick, medium, big; null to clear), ai (tasks: true when Claude is doing it), review (tasks: true once Claude has finished its part and the task is ready for Cat to check; null to clear), slot (tasks: slot id; null for the first session), remind (minutes before; -1 none; null for default), remind2 (null to clear), buffer (minutes after; 0 to clear), priority, mins, done, days}" },
       },
     },
   },
@@ -216,7 +216,7 @@ function freeWork(d: Data, date: string) {
   return Math.max(0, we - ws - busy);
 }
 
-const TASK_KEYS = ["id", "title", "date", "slot", "size", "ai", "deadline", "for", "waiting", "priority", "mins", "actual", "done", "steps", "carries", "from"];
+const TASK_KEYS = ["id", "title", "date", "slot", "size", "ai", "review", "deadline", "for", "waiting", "priority", "mins", "actual", "done", "steps", "carries", "from"];
 const pick = (i: Item, keys: string[]) => Object.fromEntries(keys.filter((k) => i[k] !== undefined && i[k] !== null).map((k) => [k, i[k]]));
 
 export async function call(name: string, a: Record<string, unknown>) {
@@ -352,6 +352,9 @@ export async function call(name: string, a: Record<string, unknown>) {
           if (f.size === null || f.size === "") delete next.size;
           else if (f.size !== undefined) { need(SIZEK.includes(String(f.size)), "size must be quick, medium or big."); next.size = String(f.size); }
           if (f.ai === false || f.ai === null) delete next.ai;
+          if (f.review === false || f.review === null) delete next.review;
+          else if (f.review !== undefined) next.review = true;
+          if (next.done) delete next.review;
           if (f.slot === null || f.slot === "" || f.slot === "work") delete next.slot;
           // Re-planned by hand, so it no longer counts as moved from an earlier day.
           if (f.date !== undefined && next.date !== d[col][i].date) { delete next.carries; delete next.from; }
@@ -375,6 +378,7 @@ export async function call(name: string, a: Record<string, unknown>) {
         const t = d.tasks.find((x) => x.id === a.id);
         need(t, "No task with that id.");
         t!.done = a.done === undefined ? true : !!a.done;
+        if (t!.done) { t!.doneAt = Date.now(); delete t!.review; } else delete t!.doneAt;
         return { updated: t };
       });
     case "skip_routine":
@@ -427,7 +431,7 @@ export async function handleRpc(msg: Rpc) {
         capabilities: { tools: {} },
         serverInfo: { name: "cats-planner", version: "1.0.0" },
         instructions:
-          "Cat's day planner. Times are 24-hour in Cape Town (Africa/Johannesburg). Call get_plan before changing a day so you use real ids and avoid clashes. Confirm before deleting anything.",
+          "Cat's day planner. Times are 24-hour in Cape Town (Africa/Johannesburg). Call get_plan before changing a day so you use real ids and avoid clashes. Confirm before deleting anything. Cat forgets to tick things off, so keep the planner true for her: when you finish your part of a task marked ai (claude_working), call update_item with fields {review: true} in the same turn so it shows as ready for her to check, and when she tells you something is finished, call complete_task without being asked.",
       });
     }
     case "ping":

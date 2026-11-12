@@ -4,6 +4,8 @@ import { getKeys } from "@/lib/push";
 import { loadRolled, rebalance } from "@/lib/slots";
 
 export const dynamic = "force-dynamic";
+// A stuck request ends after 30 seconds instead of Vercel's default of 300.
+export const maxDuration = 30;
 
 export async function GET(req: Request) {
   const d = await loadRolled();

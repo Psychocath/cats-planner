@@ -3,6 +3,8 @@ import { loadData, updateData, type PushSub } from "@/lib/store";
 import { sendToAll } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
+// A stuck request ends after 30 seconds instead of Vercel's default of 300.
+export const maxDuration = 30;
 
 // POST {action:"subscribe", subscription} | {action:"unsubscribe", endpoint} | {action:"test"}
 export async function POST(req: Request) {

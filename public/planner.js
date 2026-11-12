@@ -1,4 +1,240 @@
 (function(){
+/* Hubs: the "Do this now" card, 4 hub blocks on Home and a page per hub.
+   Loaded before planner.js. It only declares functions; planner.js calls them once everything is loaded.
+   Nothing here stores new data: every page is a filtered view of the tasks, events and routines that already exist. */
+const HUBS=[
+  {k:"clients",t:"Clients",i:"work",c:"k-work"},
+  {k:"family",t:"Family",i:"family",c:"k-family"},
+  {k:"personal",t:"Personal",i:"me",c:"k-me"},
+  {k:"food",t:"Shopping and Meals",i:"cart",c:"k-admin"}];
+const hubRx=n=>new RegExp("\\b"+String(n).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b","i");
+const hubHas=(x,n)=>hubRx(n).test(x.title||"");
+const hubOpen=t=>!t.done&&!isShop(t);
+const hubDay=ds=>{const k=daysBetween(todayStr(),ds);return k===0?"Today":k===1?"Tomorrow":k>1&&k<7?DAYN[wd(fromYmd(ds))-1]+" "+fromYmd(ds).getDate():fmt(fromYmd(ds),{day:1,month:"short"})};
+
+/* People are read from the planner itself: a name after "Fetch" in a Family routine, or a "Name:" prefix that a Family item also mentions. */
+function hubPeople(){
+  const fam=[...S.routines,...S.blocks].filter(x=>(x.kind||"work")==="family"),names=new Set();
+  fam.forEach(x=>{const m=/^(?:Fetch|Collect|Pick up|Drop off|Drop)\s+([A-Z][a-z]+)/.exec(x.title||"");if(m)names.add(m[1])});
+  [...S.tasks,...S.blocks].forEach(x=>{const p=rawClient(x);if(p&&/^[A-Z][a-z]+$/.test(p)&&fam.some(f=>hubHas(f,p)))names.add(p)});
+  return[...names];
+}
+/* Clients are the names before the colon in titles, leaving out people, shopping lists and one-off prefixes. */
+function hubClients(){
+  const ppl=hubPeople().map(p=>p.toLowerCase()),m=new Map();
+  [...S.tasks,...S.blocks].forEach(x=>{if(isShop(x))return;const c=clientOf(x);if(!c||ppl.includes(c.toLowerCase()))return;
+    if(!m.has(c))m.set(c,{name:c,tasks:[],blocks:[]});(x.start?m.get(c).blocks:m.get(c).tasks).push(x)});
+  const open=c=>c.tasks.filter(t=>!t.done).length;
+  const list=[...m.values()].filter(c=>c.tasks.length+c.blocks.length>=2);
+  /* a task that names a client without the "Client:" prefix still belongs on that client's page */
+  [...S.tasks,...S.blocks].forEach(x=>{if(isShop(x)||clientOf(x))return;const c=list.find(k=>hubHas(x,k.name));if(c)(x.start?c.blocks:c.tasks).push(x)});
+  return list.sort((a,b)=>open(b)-open(a));
+}
+function hubPersonalTasks(){
+  const cl=new Set(hubClients().map(c=>c.name)),ppl=hubPeople();
+  const names=[...cl];
+  return S.tasks.filter(t=>hubOpen(t)&&!cl.has(clientOf(t))&&!names.some(n=>hubHas(t,n))&&!ppl.some(p=>hubHas(t,p)));
+}
+/* events and routines from today on; a routine shows once, at its next time */
+function hubUpcoming(test,days){
+  const out=[],seen=new Set(),td=todayStr(),nm=nowMin();
+  for(let i=0;i<days;i++){const ds=ymd(addDays(fromYmd(td),i));
+    allItemsFor(ds).forEach(it=>{if(!test(it)||(i===0&&toMin(it.end)<=nm))return;
+      if(it.src==="routines"){if(seen.has(it.id))return;seen.add(it.id)}out.push({it,ds})})}
+  return out;
+}
+const hubEvRow=({it,ds})=>`<button type="button" class="crow k-${it.kind||"work"}" data-open="${it.src}:${it.id}:${ds}"><span class="cd">${hubDay(ds)}</span><span class="tt"><b>${esc(it.title)}</b><small>${it.start}–${it.end}${it.src==="routines"?" · repeats":""}${it.location?" · "+esc(it.location):""}</small></span></button>`;
+const hubTaskRow=(t,ds)=>`<button type="button" class="crow task" data-open="tasks:${t.id}"><span class="cd">${ds?hubDay(ds):"No day"}</span><span class="tt"><b>${esc(t.title)}</b>${t.waiting?`<small class="wait">Waiting on ${esc(t.waiting)}</small>`:""}</span></button>`;
+const hubSec=(title,count,inner,empty)=>`<section class="sec"><div class="sech"><h2>${title}</h2>${count!==null?`<span class="cnt">${count}</span>`:""}</div>${inner?`<div class="card list">${inner}</div>`:`<p class="hubnone">${empty}</p>`}</section>`;
+const hubByDate=(a,b)=>(a.date||"9999").localeCompare(b.date||"9999")||(a.priority==="top"?0:1)-(b.priority==="top"?0:1);
+const hubTaskList=list=>{const k=(S.hub?S.hub.k+"|"+S.hub.sub:"")+"|"+list.length,all=!!(S.hubAll&&S.hubAll[k]),sorted=list.slice().sort(hubByDate),CAP=6;
+  return (all?sorted:sorted.slice(0,CAP)).map(t=>sesTask(t,null,"")).join("")+(sorted.length>CAP?`<button type="button" class="latr" data-huball="${esc(k)}" aria-expanded="${all}">${all?"Show fewer":`Show all ${sorted.length}`}${ic(all?"left":"right")}</button>`:"")};
+
+/* ---------- Home: Do this now ---------- */
+function hubTodayOpen(){const td=todayStr();return S.tasks.filter(t=>hubOpen(t)&&t.date&&t.date<=td)}
+function hubNow(){
+  const open=hubTodayOpen();if(!open.length)return null;
+  if(S.pick){const p=open.find(t=>t.id===S.pick);if(p)return p}
+  const top=open.filter(t=>t.priority==="top");if(top.length)return top[0];
+  const car=open.filter(t=>t.carries);if(car.length)return car[0];
+  const sized=open.filter(t=>loadOf(t)).sort((a,b)=>loadOf(a)-loadOf(b));
+  return sized[0]||open[0];
+}
+function doNowHtml(){
+  const td=todayStr(),nm=nowMin(),all=S.tasks.filter(t=>!isShop(t)&&t.date===td),d=all.filter(t=>t.done).length,n=all.length,t=hubNow();
+  const pct=n?d/n:0,C=2*Math.PI*15;
+  const ring=`<span class="dn-ring" role="img" aria-label="${d} of ${n} of today's tasks done"><svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" class="rb"/><circle cx="18" cy="18" r="15" class="rf" stroke-dasharray="${(C*pct).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 18 18)"/></svg><b>${d}/${n}</b></span>`;
+  const nx=allItemsFor(td).find(i=>toMin(i.start)>nm);
+  const next=nx?`<p class="dn-n">${ic("clock")}Next: ${esc(nx.title)} in ${inFmt(toMin(nx.start)-nm)}</p>`:"";
+  if(!t)return `<section class="donow done" aria-label="Do this now"><div class="dn-top"><span class="dn-l">${ic("focus")}Do this now</span>${ring}</div><p class="dn-e">${n?"Today's tasks are done.":"No tasks planned for today."}</p>${next}</section>`;
+  const st=(t.steps||[]).find(x=>!x.done),meta=[t.size?SIZEL[t.size]:t.mins?inFmt(+t.mins):"",t.ai?"Claude working":"",st?"First step: "+st.text:""].filter(Boolean).join(" · ");
+  const more=hubTodayOpen().length>1;
+  return `<section class="donow" aria-label="Do this now"><div class="dn-top"><span class="dn-l">${ic("focus")}Do this now</span>${ring}</div>
+    <button type="button" class="dn-t" data-open="tasks:${t.id}"><b>${esc(t.title)}</b>${meta?`<small>${esc(meta)}</small>`:""}</button>
+    <div class="dn-a"><button type="button" class="dn-start" data-focus="tasks:${t.id}:${td}">${ic("clock")}Start</button>${more?`<button type="button" class="dn-pick" data-pickme>${ic("sparkle")}Pick for me</button>`:""}<span class="sp"></span>${chk(t.id,false)}</div>${next}</section>`;
+}
+
+/* ---------- Home: the 4 hub blocks, each with 2 live lines ---------- */
+function hubBlocksHtml(){
+  const td=todayStr(),cl=hubClients(),ppl=hubPeople();
+  const nOpen=c=>c.tasks.filter(t=>!t.done).length;
+  const famNext=hubUpcoming(it=>(it.kind||"work")==="family",8)[0];
+  const pt=hubPersonalTasks(),inbox=S.tasks.filter(t=>hubOpen(t)&&t.inbox).length;
+  const wins=S.tasks.filter(t=>t.done&&t.doneAt&&ymd(new Date(t.doneAt))===td).length;
+  const shops=S.tasks.filter(t=>isShop(t)&&!t.done),left=shops.reduce((a,t)=>a+(t.steps||[]).filter(x=>!x.done).length,0);
+  const L={
+    clients:cl.length?cl.slice(0,2).map(c=>`${esc(c.name)}: ${nOpen(c)} open`):["No client tasks yet",""],
+    family:[famNext?`Next: ${esc(famNext.it.title)}, ${hubDay(famNext.ds).toLowerCase()} ${famNext.it.start}`:"Nothing in the next week",ppl.map(p=>`${esc(p)}: ${S.tasks.filter(t=>hubOpen(t)&&hubHas(t,p)).length} open`).join(" · ")],
+    personal:[`${pt.length} task${pt.length===1?"":"s"} open`,`Inbox ${inbox} · Wins today ${wins}`],
+    food:[left?`${left} item${left===1?"":"s"} to buy`:"Shopping list is empty",shops.length?shops.map(t=>esc(String(t.title).replace(/\s*shopping\s*$/i,""))).slice(0,3).join(" · "):""]};
+  return `<section class="sec hubs" aria-label="Your hubs"><div class="sech"><h2>${ic("flag")}Your hubs</h2></div><div class="hubg">${HUBS.map(h=>`<button type="button" class="hubb ${h.c}" data-hub="${h.k}"><span class="hb-h">${ic(h.i)}<b>${h.t}</b>${ic("right","go")}</span><small>${L[h.k][0]||""}</small><small>${L[h.k][1]||""}</small></button>`).join("")}</div></section>`;
+}
+
+/* ---------- hub pages ---------- */
+function openHub(k,sub){
+  const was=S.view;if(was==="cal")return;if(was==="home")rememberScroll();
+  S.hub={k,sub:sub||""};S.view="hub";
+  if(was!=="hub")history.pushState({v:"hub"},"","#hub");
+  render(false);scrollTo(0,0);if(was!=="hub")animate("sl");
+}
+function renderHub(){
+  const h=S.hub||{k:"clients",sub:""},def=HUBS.find(x=>x.k===h.k)||HUBS[0];
+  const body=h.k==="clients"?hubClientsPage(h.sub):h.k==="family"?hubFamilyPage(h.sub):h.k==="personal"?hubPersonalPage():hubFoodPage();
+  $("#view").innerHTML=`<div class="hubv ${def.c}"><div class="hubh"><span class="hubi">${ic(def.i)}</span><h2>${esc(h.k==="clients"&&h.sub?h.sub:def.t)}</h2>${h.k==="clients"&&h.sub?`<button type="button" class="tlink" data-hub="clients">All clients${ic("right")}</button>`:""}</div>${body}</div>`;
+}
+function hubClientsPage(name){
+  const cl=hubClients();
+  if(!name||!cl.find(c=>c.name===name)){
+    if(!cl.length)return `<p class="hubnone">No clients yet. Start a task's title with the client's name and a colon, like "Acme: send the quote", and the client appears here.</p>`;
+    return `<div class="hubcl">${cl.map(c=>{const open=c.tasks.filter(t=>!t.done),w=open.filter(t=>t.waiting).length,done=c.tasks.length-open.length,nx=hubUpcoming(it=>clientOf(it)===c.name,60)[0],pct=c.tasks.length?Math.round(done/c.tasks.length*100):0;
+      return `<button type="button" class="hubc" data-hub="clients" data-sub="${esc(c.name)}"><span class="hc-h"><b>${esc(c.name)}</b>${ic("right","go")}</span><span class="hc-n">${open.length} open${w?` · ${w} waiting`:""} · ${done} done</span><span class="hbar"><i style="width:${pct}%"></i></span>${nx?`<small>Next: ${esc(nx.it.title)}, ${hubDay(nx.ds).toLowerCase()} ${nx.it.start}</small>`:""}</button>`}).join("")}</div>`;
+  }
+  const c=cl.find(x=>x.name===name),open=c.tasks.filter(t=>!t.done),done=c.tasks.filter(t=>t.done),waiting=open.filter(t=>t.waiting),pct=c.tasks.length?Math.round(done.length/c.tasks.length*100):0;
+  const ev=hubUpcoming(it=>clientOf(it)===name||(!clientOf(it)&&hubHas(it,name)),60);
+  return `<div class="hprog"><span class="hbar"><i style="width:${pct}%"></i></span><small>${done.length} of ${c.tasks.length} tasks done</small></div>`
+    +hubSec("Appointments",ev.length,ev.map(hubEvRow).join(""),"No appointments coming up.")
+    +hubSec("Waiting on",waiting.length,waiting.map(t=>hubTaskRow(t,t.date)).join(""),"Nothing is waiting on anyone.")
+    +hubSec("Open tasks",open.length,hubTaskList(open),"Nothing open for this client.")
+    +hubSec("Done",done.length,done.slice(-8).reverse().map(t=>`<button type="button" class="crow task dn" data-open="tasks:${t.id}"><span class="cd">${ic("tick")}</span><span class="tt"><b>${esc(t.title)}</b></span></button>`).join(""),"Nothing finished yet.");
+}
+function hubFamilyPage(person){
+  const ppl=hubPeople();if(person&&!ppl.includes(person))person="";
+  const tabs=`<div class="hubtabs" role="group" aria-label="Who">${[""].concat(ppl).map(p=>`<button type="button" data-hub="family" data-sub="${esc(p)}" aria-pressed="${p===person}">${p?esc(p):"Everyone"}</button>`).join("")}</div>`;
+  if(!person){
+    const ev=hubUpcoming(it=>(it.kind||"work")==="family",14);
+    const tk=S.tasks.filter(t=>hubOpen(t)&&ppl.some(p=>hubHas(t,p)));
+    return tabs+hubSec("Coming up for the family",ev.length,ev.map(hubEvRow).join(""),"Nothing in the next 2 weeks.")
+      +hubSec("Family tasks",tk.length,hubTaskList(tk),"No open family tasks.");
+  }
+  const td=todayStr(),tk=S.tasks.filter(t=>hubOpen(t)&&hubHas(t,person));
+  const dated=tk.map(t=>({t,d:[t.date,t.for,t.deadline].filter(x=>x&&x>=td).sort()[0]})).filter(x=>x.d).map(x=>({ds:x.d,html:hubTaskRow(x.t,x.d)}));
+  const ev=hubUpcoming(it=>hubHas(it,person),60).map(x=>({ds:x.ds,html:hubEvRow(x)}));
+  const coming=dated.concat(ev).sort((a,b)=>a.ds.localeCompare(b.ds));
+  return tabs+`<form class="hubadd" data-hubadd="${esc(person)}" autocomplete="off"><input aria-label="Add something for ${esc(person)}" placeholder="Add something for ${esc(person)}" enterkeyhint="done"><button type="submit" class="primary">Add</button></form>`
+    +hubSec("Coming up for "+esc(person),coming.length,coming.map(x=>x.html).join(""),"Nothing dated for "+esc(person)+" yet.")
+    +hubSec("Tasks",tk.length,hubTaskList(tk),"No open tasks for "+esc(person)+".");
+}
+function hubPersonalPage(){
+  const td=todayStr(),weekAgo=Date.now()-7*864e5,pt=hubPersonalTasks();
+  const me=hubUpcoming(it=>(it.kind||"work")==="me",14);
+  const rt=hubUpcoming(it=>it.src==="routines"&&(it.kind||"work")!=="family",8);
+  const wins=S.tasks.filter(t=>t.done&&t.doneAt&&t.doneAt>=weekAgo).sort((a,b)=>b.doneAt-a.doneAt),today=wins.filter(t=>ymd(new Date(t.doneAt))===td).length;
+  return hubSec("Me time",me.length,me.map(hubEvRow).join(""),"No me time booked in the next 2 weeks.")
+    +hubSec("Personal tasks",pt.length,hubTaskList(pt),"No personal tasks open.")
+    +hubSec("Routines",rt.length,rt.map(hubEvRow).join(""),"No personal routines yet.")
+    +hubSec(`Wins this week`,wins.length,wins.slice(0,15).map(t=>`<button type="button" class="crow task dn" data-open="tasks:${t.id}"><span class="cd">${hubDay(ymd(new Date(t.doneAt)))}</span><span class="tt"><b>${esc(t.title)}</b></span></button>`).join(""),"Tick a task and it shows here. Wins are counted from today on.")
+    +(wins.length?`<p class="hubnote">${today} today · ${wins.length} in the last 7 days</p>`:"");
+}
+function hubFoodPage(){
+  const shops=S.tasks.filter(t=>isShop(t)&&!t.done);
+  const lists=shops.map(t=>{const left=(t.steps||[]).filter(x=>!x.done).length;return `<section class="sec"><div class="sech"><h2>${esc(String(t.title).replace(/\s*shopping\s*$/i,""))}</h2><span class="cnt">${left} left</span></div><div class="card">${stepList(t)||`<p class="hubnone">No items on this list.</p>`}</div></section>`}).join("");
+  return `<button type="button" class="tlink hubshop" data-shop>${ic("plus")}Add items or a shop</button>`+(lists||`<p class="hubnone">Your shopping list is empty.</p>`)
+    +`<section class="sec"><div class="sech"><h2>Meals and recipes</h2></div><p class="hubnone">The meal planner, recipes and the grocery list builder arrive in the next update.</p></section>`;
+}
+
+/* ---------- Today's work: the day's tasks sorted by what each one needs from Cat ---------- */
+const wlNextDay=ds=>{let d=fromYmd(ds);for(let i=0;i<8;i++){d=addDays(d,1);if(sessions(ymd(d)).some(s=>s.windows.length))return ymd(d)}return ymd(addDays(fromYmd(ds),1))};
+const wlChip=t=>{const c=clientOf(t);return c?`<i class="wchip2">${esc(c)}</i>`:""};
+function wlRow(t,extra){
+  const c=clientOf(t),stp=t.steps||[],sd=stp.filter(x=>x.done).length;
+  const meta=[t.size?SIZEL[t.size]:t.mins?inFmt(+t.mins):"",stp.length?`${sd} of ${stp.length} steps`:"",extra||""].filter(Boolean).join(" · ");
+  return `<div class="wrow ${t.done?"done":""} ${S.flash===t.id?"grow":""}">${chk(t.id,t.done)}<button type="button" class="wmain" data-open="tasks:${t.id}"><b>${t.priority==="top"&&!t.done?ic("focus","pri"):""}${esc(shortTitle(t,c))}</b><small>${wlChip(t)}${esc(meta)}</small></button><button type="button" class="wmore" data-tmenu="${t.id}" aria-label="Move or change ${esc(t.title)}">${ic("more")}</button></div>`;
+}
+const wlLane=(key,label,sub,rows,openByDefault)=>{if(!rows.length)return"";const o=S.wl&&key in S.wl?S.wl[key]:!!openByDefault;
+  return `<button type="button" class="latr wl" data-wlane="${key}" aria-expanded="${o}"><span>${label} · ${rows.length}${sub?`<small>${sub}</small>`:""}</span>${ic(o?"left":"right")}</button>${o?`<div class="wlist">${rows.join("")}</div>`:""}`};
+function workListHtml(ds){
+  const td=todayStr(),isT=ds===td,nm=nowMin(),ss=sessions(ds);
+  let all=ss.flatMap(s=>s.tasks);
+  if(!ss.length)all=S.tasks.filter(t=>t.date===ds&&!isShop(t));
+  if(!all.length&&!ss.some(s=>s.windows.length))return"";
+  const room=ss.reduce((a,s)=>a+s.room,0),openAll=all.filter(t=>!t.done),need=openAll.reduce((a,t)=>a+loadOf(t),0),nos=openAll.filter(t=>!loadOf(t)).length,doneN=all.length-openAll.length;
+  const over=need-room,state=!openAll.length?"ok":over>0?"over":need>room*.85?"tight":"ok";
+  const fitTxt=!openAll.length?(all.length?"Everything is ticked.":"No tasks planned."):`${inFmt(Math.max(0,room))} left${isT?" today":""} · about ${inFmt(need)} of tasks · ${over>0?inFmt(over)+" over":state==="tight"?"just fits":"fits"}${nos?` · ${nos} with no size`:""}`;
+  const pct=all.length?Math.round(doneN/all.length*100):0;
+  const clients=[...new Set(openAll.map(t=>clientOf(t)).filter(Boolean))],f=clients.includes(S.wf)?S.wf:"";
+  const chips=clients.length>1?`<div class="wfil" role="group" aria-label="Show one client">${[""].concat(clients).map(c=>`<button type="button" data-wfilter="${esc(c)}" aria-pressed="${c===f}">${c?esc(c)+" "+openAll.filter(t=>clientOf(t)===c).length:"All"}</button>`).join("")}</div>`:"";
+  const open=openAll.filter(t=>!f||clientOf(t)===f);
+  const waiting=open.filter(t=>t.waiting),claude=open.filter(t=>t.ai&&!t.waiting),mine=open.filter(t=>!t.ai&&!t.waiting);
+  mine.sort((a,b)=>(a.priority==="top"?0:1)-(b.priority==="top"?0:1));
+  /* Next up: what fits before the next appointment, at least 3 and at most 6 */
+  const nextBusy=isT?allItemsFor(ds).find(i=>toMin(i.start)>nm):null,gap=nextBusy?toMin(nextBusy.start)-nm:1e9;
+  let used=0,n=0;for(const t of mine){const l=loadOf(t)||15;if(n>=3&&used+l>gap)break;used+=l;n++;if(n>=6)break}
+  const next=mine.slice(0,n),later=mine.slice(n),ready=claude.filter(t=>t.review),working=claude.filter(t=>!t.review);
+  const nextLbl=!isT?"Planned":nextBusy&&n<mine.length?`Next up · before ${esc(nextBusy.title)} at ${nextBusy.start}`:"Next up";
+  let h=`<section class="sec wl-sec" aria-label="${isT?"Today's work":"Work for "+dayWord(ds)}"><div class="sech"><h2>${ic("task")}${isT?"Today's work":"Work for "+esc(dayWord(ds))}</h2><span class="cnt">${doneN} of ${all.length} done</span></div>
+    <div class="card wl-card"><span class="hbar wl-${state}"><i style="width:${pct}%"></i></span><p class="wl-fit wl-${state}">${fitTxt}</p>${over>0?`<button type="button" class="wl-move" data-moveover="${ds}">Move what doesn't fit to ${esc(dayWord(wlNextDay(ds)))}</button>`:""}${chips}`;
+  if(ready.length)h+=`<p class="wl-h rdy">${ic("sparkle")}Ready for you to check <span>${ready.length}</span></p><div class="wlist">${ready.map(t=>wlRow(t,"Claude finished")).join("")}</div>`;
+  if(next.length)h+=`<p class="wl-h">${nextLbl}</p><div class="wlist">${next.map(t=>wlRow(t)).join("")}</div>`;
+  else if(openAll.length&&!ready.length)h+=`<p class="hubnone">Nothing here needs you right now.</p>`;
+  h+=wlLane(ds+"|later",isT?"Later today":"More",null,later.map(t=>wlRow(t)));
+  h+=wlLane(ds+"|claude",`${ic("sparkle")}With Claude`,"Claude marks these ready when the work is done",working.map(t=>wlRow(t,"Claude working")));
+  h+=wlLane(ds+"|wait","Waiting on others",null,waiting.map(t=>wlRow(t,"Waiting on "+t.waiting)));
+  h+=wlLane(ds+"|done","Done",null,all.filter(t=>t.done&&(!f||clientOf(t)===f)).map(t=>wlRow(t)));
+  return h+`<button type="button" class="tlink sadd" data-session="${ss.length?sesKey(ds,ss[0]):""}" data-sesfocus="1" ${ss.length?"":"hidden"}>${ic("plus")}Add a task</button></div></section>`;
+}
+/* after the work day ends: one card to tick what got done; the rest moves on overnight by itself */
+function wrapUpHtml(){
+  const td=todayStr();if(!isWorkday(new Date())||nowMin()<toMin(S.work.end))return"";
+  const open=S.tasks.filter(t=>hubOpen(t)&&t.date&&t.date<=td&&!t.ai&&!t.waiting);if(!open.length)return"";
+  const rows=(S.wrapAll?open:open.slice(0,6)).map(t=>wlRow(t)).join("");
+  return `<section class="wrapup" aria-label="Wrap up your day"><div class="dn-top"><span class="dn-l">${ic("tick")}Wrap up your day</span><span class="cnt">${open.length} still open</span></div><p class="wu-p">Tick what you finished. Anything left moves to ${esc(dayWord(wlNextDay(td)))} overnight.</p><div class="wlist">${rows}</div>${open.length>6?`<button type="button" class="latr" data-wrapall>${S.wrapAll?"Show fewer":`Show all ${open.length}`}${ic(S.wrapAll?"left":"right")}</button>`:""}</section>`;
+}
+function taskMenu(id){
+  const t=S.tasks.find(x=>x.id===id);if(!t)return;const td=todayStr(),base=t.date&&t.date>=td?t.date:td,nx=wlNextDay(base),isTop=t.priority==="top";
+  sheet("Task actions",`<div class="in tmenu"><h3>${esc(t.title)}</h3>
+    <button type="button" class="ghost" id="tmNext">${ic("right")}Move to ${esc(dayWord(nx))}</button>
+    <button type="button" class="ghost" id="tmPri">${ic("focus")}${isTop?"Remove from priorities":"Make it a priority"}</button>
+    <button type="button" class="ghost" id="tmWait">${ic("clock")}${t.waiting?"No longer waiting":"Waiting on someone"}</button>
+    <button type="button" class="ghost" id="tmOpen">${ic("pen")}Open the task</button>
+    <button type="button" class="ghost" id="tmX">Cancel</button></div>`);
+  const before=strip(t);
+  $("#tmX").onclick=closeSheet;
+  $("#tmOpen").onclick=()=>{closeSheet();setTimeout(()=>openDock("tasks:"+t.id),120)};
+  $("#tmNext").onclick=()=>{closeSheet();moveTask(t,nx,null);toast(`Moved to ${dayWord(nx)}`,()=>save("tasks",t.id,before))};
+  $("#tmPri").onclick=()=>{closeSheet();const d=base;if(!isTop&&topFor(d).length>=3){toast(`${cap(dayWord(d))} already has 3 priorities.`);return}save("tasks",t.id,{...before,priority:isTop?"normal":"top",date:d,inbox:false});toast(isTop?"Removed from priorities":`Priority for ${dayWord(d)}`,()=>save("tasks",t.id,before))};
+  $("#tmWait").onclick=()=>{closeSheet();if(t.waiting){const r={...before};delete r.waiting;save("tasks",t.id,r);toast("Back on your list",()=>save("tasks",t.id,before))}else{save("tasks",t.id,{...before,waiting:"someone"});toast("Parked under Waiting on others",()=>save("tasks",t.id,before))}};
+}
+
+/* ---------- clicks and the "add for a person" box ---------- */
+function hubClick(e){
+  const hb=e.target.closest("[data-hub]");if(hb){openHub(hb.dataset.hub,hb.dataset.sub||"");return true}
+  const sa=e.target.closest("[data-sesall]");if(sa){S.sesAll=S.sesAll||{};S.sesAll[sa.dataset.sesall]=!S.sesAll[sa.dataset.sesall];render();return true}
+  const ha=e.target.closest("[data-huball]");if(ha){S.hubAll=S.hubAll||{};S.hubAll[ha.dataset.huball]=!S.hubAll[ha.dataset.huball];render();return true}
+  const tm=e.target.closest("[data-tmenu]");if(tm){taskMenu(tm.dataset.tmenu);return true}
+  const wla=e.target.closest("[data-wlane]");if(wla){S.wl=S.wl||{};const k=wla.dataset.wlane;S.wl[k]=wla.getAttribute("aria-expanded")!=="true";render();return true}
+  const wfi=e.target.closest("[data-wfilter]");if(wfi){S.wf=wfi.dataset.wfilter;render();return true}
+  const mo=e.target.closest("[data-moveover]");if(mo){const d=mo.dataset.moveover;rebalanceFor(d).then(()=>{if(d===homeSel())render()});return true}
+  if(e.target.closest("[data-wrapall]")){S.wrapAll=!S.wrapAll;render();return true}
+  if(e.target.closest("[data-pickme]")){const cur=hubNow(),rest=hubTodayOpen().filter(t=>!cur||t.id!==cur.id);if(rest.length){S.pick=rest[Math.floor(Math.random()*rest.length)].id;render()}return true}
+  return false;
+}
+document.addEventListener("submit",e=>{
+  const f=e.target.closest&&e.target.closest("[data-hubadd]");if(!f)return;e.preventDefault();
+  const inp=f.querySelector("input"),v=inp.value.trim(),p=f.dataset.hubadd;if(!v)return;
+  const id=uid();save("tasks",id,{title:`${p}: ${v}`,date:null,priority:"normal",mins:null,done:false,inbox:true,createdAt:Date.now()});
+  toast(`Added for ${p}`,()=>remove("tasks",id));
+});
+
 "use strict";
 const KINDS={work:"Work",family:"Family",admin:"Admin",me:"Me time"};
 const DAYN=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -47,7 +283,7 @@ function applyTint(){const h=new Date().getHours();document.documentElement.setA
 applyTint();
 
 /* ---------- line icons (stroke, currentColor) ---------- */
-const IC={cart:`<path d="M3 4h2l2.4 11h10.2L20 7H6.2"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>`,
+const IC={more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',cart:`<path d="M3 4h2l2.4 11h10.2L20 7H6.2"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>`,
  work:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
  family:'<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.5A5 5 0 0 1 21 20"/>',
  admin:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>',
@@ -238,17 +474,20 @@ async function rebalanceFor(ds){
 }
 const sesRow=(ds,s,w,past)=>`<div class="ag ses-r k-${s.kind} ${past?"past":""}"><span class="at">${hm(w[0])}</span><button type="button" class="am" data-session="${sesKey(ds,s)}"><i class="kd" aria-hidden="true"></i><span class="tt"><b>${esc(s.title)}${past?`<span class="pastl">past</span>`:""}</b><small>${hm(w[0])}–${hm(w[1])} · ${inFmt(w[1]-w[0])}</small></span></button></div>`;
 function stepList(t){const st=t.steps||[];if(!st.length)return"";return `<div class="tsteps">${st.map((x,i)=>`<label class="step ${x.done?"done":""}"><input type="checkbox" data-step="${i}" data-key="tasks:${t.id}" ${x.done?"checked":""}><span>${esc(x.text)}</span></label>`).join("")}</div>`}
-function sesTask(t,ds,c){const ns=[t.size?SIZEL[t.size]:t.mins?inFmt(+t.mins):""].filter(Boolean).join(" · ");
-  return `<div class="trow ${t.done?"done":""} ${S.flash===t.id?"grow":""}">${chk(t.id,t.done)}<div class="tcol"><button type="button" class="tmain" data-open="tasks:${t.id}"><b>${esc(shortTitle(t,c))}</b>${dateLine(t,ds)}${ns?`<span class="dline">${ns}</span>`:""}</button>${t.done?"":stepList(t)}</div></div>`}
+function sesTask(t,ds,c){const stp=t.steps||[],sd=stp.filter(x=>x.done).length;const ns=[t.size?SIZEL[t.size]:t.mins?inFmt(+t.mins):"",stp.length?`${sd} of ${stp.length} steps`:""].filter(Boolean).join(" · ");
+  return `<div class="trow ${t.done?"done":""} ${S.flash===t.id?"grow":""}">${chk(t.id,t.done)}<div class="tcol"><button type="button" class="tmain" data-open="tasks:${t.id}"><b>${esc(shortTitle(t,c))}</b>${dateLine(t,ds)}${ns?`<span class="dline">${ns}</span>`:""}</button></div></div>`}
 function sesCard(ds,s){
   const td=todayStr(),nm=nowMin(),tops=new Set(topFor(ds).map(t=>t.id)),list=s.tasks.filter(t=>!tops.has(t.id)),prio=s.tasks.filter(t=>tops.has(t.id)),np=prio.length,nos=s.tasks.filter(t=>!t.done&&!loadOf(t)).length;
   const open=s.tasks.filter(t=>!t.done).length,all=s.windows.reduce((a,[x,y])=>a+y-x,0),ended=ds===td&&s.windows.every(([,y])=>y<=nm);
   const chips=s.windows.map(([a,b])=>`<span class="wchip ${ds===td&&b<=nm?"gone":""}">${hm(a)}–${hm(b)}</span>`).join("");
   let h=`<div class="scard k-${s.kind}"><div class="sch"><b>${esc(s.title)} tasks</b><span>${open} to do${np?`, incl. ${np} ${np>1?"priorities":"priority"}`:""} · ${inFmt(all)} in all</span>${sesFull(s)?`<span class="pill amber">Looks full</span>`:""}${nos&&s.tasks.some(t=>!t.done&&loadOf(t))?`<span class="nosz">${nos} with no size, not counted</span>`:""}</div>${s.windows.length>1?`<div class="wchips">${chips}</div>`:""}`;
   if(prio.length)h+=`<p class="cgrp prio">${ic("focus")}Priorities <span>do these first</span></p>${prio.map(t=>sesTask(t,ds,"")).join("")}`;
-  h+=groupTasks(list).map(g=>`<p class="cgrp ${g.client?"":"me"}">${esc(g.client||"Personal")} <span>${g.tasks.length} task${g.tasks.length>1?"s":""}</span></p>${g.tasks.map(t=>sesTask(t,ds,g.client)).join("")}`).join("");
+  const key=sesKey(ds,s),showAll=!!(S.sesAll&&S.sesAll[key]),openList=list.filter(t=>!t.done),doneList=list.filter(t=>t.done),CAP=5;
+  const shown=showAll?list:openList.slice(0,CAP),later=showAll?0:openList.length-shown.length+doneList.length;
+  h+=groupTasks(shown).map(g=>`<p class="cgrp ${g.client?"":"me"}">${esc(g.client||"Personal")} <span>${g.tasks.length} task${g.tasks.length>1?"s":""}</span></p>${g.tasks.map(t=>sesTask(t,ds,g.client)).join("")}`).join("");
   if(!list.length&&!prio.length)h+=`<p class="sesn">No tasks in this session yet.</p>`;
   if(ended&&open)h+=`<p class="sesn">Anything not ticked moves to your next work day overnight.</p>`;
+  if(later>0||showAll&&list.length>CAP)h+=`<button type="button" class="latr" data-sesall="${key}" aria-expanded="${showAll}">${showAll?"Show fewer":`Later: ${openList.length-shown.length} more task${openList.length-shown.length===1?"":"s"}${doneList.length?` · ${doneList.length} done`:""}`}${ic(showAll?"left":"right")}</button>`;
   return h+`<button type="button" class="tlink sadd" data-session="${sesKey(ds,s)}" data-sesfocus="1">${ic("plus")}Add a task</button></div>`;
 }
 function openSession(key,focus){
@@ -389,7 +628,7 @@ function wxText(){if(!S.wx||S.wx.err)return"";return ` · ${S.wx.t}° ${WX[S.wx.
 function wxHtml(){if(!S.wx||S.wx.err)return"";const w=S.wx;return `<span class="wxp" aria-label="Weather">${ic(w.code>=51?"rain":w.code>=3?"cloud":"sun")}<span><b>${w.t}°</b> ${esc(WX[w.code]||"")}<small>${esc(w.place||"Durbanville")}${w.hi!==undefined?` · H ${w.hi}° L ${w.lo}°`:""}</small></span></span>`}
 function renderHeader(){
   const c=S.cur,n=new Date(),cal=S.view==="cal";let sub="",main="";
-  $("#backrow").hidden=!cal;
+  $("#backrow").hidden=!cal&&S.view!=="hub";
   document.body.classList.toggle("homehead",!cal);
   if(!cal){sub=`<button type="button" class="dlink" data-opencal="today" aria-label="${esc(fmt(n,{weekday:"long",day:1,month:"long"}))}. Open the calendar">${esc(fmt(n,{weekday:"short",day:1,month:"short"}))}</button>${wxHtml()}`;main=hm(n.getHours()*60+n.getMinutes())}
   else{
@@ -479,7 +718,7 @@ const grpSet=(k,v)=>{S.grp[k]=v;store.set("grp",S.grp)};
 
 function renderHome(){
   const ds=homeSel();
-  $("#view").innerHTML=`<div class="homev">${homeTopHtml()}${quickAddHtml()}${homeMonthHtml(ds)}${agendaHtml(ds)}${attentionHtml(ds)}${prioritiesHtml(ds)}${otherTasksHtml(ds)}${comingUpHtml(ds)}</div>`;
+  $("#view").innerHTML=`<div class="homev">${homeTopHtml()}${quickAddHtml()}${wrapUpHtml()}${doNowHtml()}${homeMonthHtml(ds)}${agendaHtml(ds)}${workListHtml(ds)}${hubBlocksHtml()}${attentionHtml(ds)}${prioritiesHtml(ds)}${otherTasksHtml(ds)}${comingUpHtml(ds)}</div>`;
   loadWeather();
 }
 
@@ -579,7 +818,7 @@ function agendaHtml(ds){
   gs.forEach(([a,b])=>rows.push({s:a,o:2,e:b,html:gapRow(ds,a,b)}));
   ss.forEach(se=>{const w=se.windows.length?se.windows:[[toMin(se.start),toMin(se.end)]];
     const live=w.find(([,y])=>!pastAt(y)),head=live||w[w.length-1];
-    w.forEach(x=>rows.push({s:x[0],o:2,e:x[1],html:sesRow(ds,se,x,pastAt(x[1]))+(x===head?sesCard(ds,se):"")}))});
+    w.forEach(x=>rows.push({s:x[0],o:2,e:x[1],html:sesRow(ds,se,x,pastAt(x[1]))}))});
   const firstS=rows.length?Math.min(...rows.map(r=>r.s)):ws,lastE=rows.length?Math.max(...rows.map(r=>r.e)):we;
   const morning=S.morning?toMin(S.morning):null;
   const dayStart=Math.min(firstS,morning??(work?ws:firstS)),dayEnd=Math.max(lastE,work?we:lastE);
@@ -833,7 +1072,7 @@ function dayLabel(days){days=[...(days||[])].sort();if(days.length===7)return"Ev
 /* ---------- render: keeps your scroll position, no jumps ---------- */
 function render(keepScroll=true){
   const y=scrollY;renderHeader();
-  (S.view==="cal"?renderCal:renderHome)();
+  (S.view==="cal"?renderCal:S.view==="hub"?renderHub:renderHome)();
   if(keepScroll)scrollTo(0,y);
   if(S.dock)renderDock();
 }
@@ -852,7 +1091,7 @@ function pickDay(ds){const dir=ds>ymd(S.cur)?"next":"prev";slide(()=>{S.cur=from
 /* ---------- navigation: Home is the base; the calendar opens over it and Back returns to the same spot ----------
    Device and browser back: the calendar and every panel or sheet get a history entry, so Back closes them in order. */
 S.scroll=store.get("scroll",{});
-const viewKey=()=>S.view==="cal"?"cal-"+S.zoom:"home";
+const viewKey=()=>S.view==="cal"?"cal-"+S.zoom:S.view==="hub"?"hub":"home";
 function rememberScroll(){S.scroll[viewKey()]=scrollY;store.set("scroll",S.scroll)}
 const calHash=()=>`cal/${S.zoom}/${ymd(S.cur)}`;
 function setHash(h){if(location.hash.slice(1)!==h)history.replaceState(history.state,"","#"+h)}
@@ -874,7 +1113,7 @@ function goCal(zoom,date,origin){
   if(was!==null&&was!==to)animate(to>was?"zin":"zout",origin);else animate("sl");
 }
 function showHome(){S.view="home";hideSheet();S.dock=null;renderDock();render(false);const y=S.scroll.home;scrollTo(0,y||0);animate("sr")}
-function backToPlanner(){if(S.calPushed){S.calPushed=false;history.back()}else{history.replaceState(null,"","#home");showHome()}}
+function backToPlanner(){if(S.view==="hub"){history.back();return}if(S.calPushed){S.calPushed=false;history.back()}else{history.replaceState(null,"","#home");showHome()}}
 function step(n){
   slide(()=>{if(S.zoom==="month")S.cur=new Date(S.cur.getFullYear(),S.cur.getMonth()+n,1);else S.cur=addDays(S.cur,S.zoom==="week"?7*n:n);
     S.dock=null;renderDock();renderDay._scrolled=true;setHash(calHash());render()},n>0?"next":"prev",false);
@@ -888,6 +1127,7 @@ function route(first){
   const p=location.hash.slice(1).split("/");
   if(p[0]==="cal"){S.view="cal";S.zoom=LEVEL[p[1]]!==undefined?p[1]:"month";S.cur=p[2]&&/^\d{4}-\d\d-\d\d$/.test(p[2])?fromYmd(p[2]):new Date();S.cur.setHours(0,0,0,0);render(false);return}
   /* old Tasks and Routines links open Home with those groups showing */
+  if(p[0]==="hub")history.replaceState(null,"","#home");
   if(p[0]==="tasks"){S.grp.inbox=S.grp.uns=true;history.replaceState(null,"","#home")}
   if(p[0]==="routines"){S.grp.routines=true;history.replaceState(null,"","#home")}
   if(first){S.view="home";render(false);return}
@@ -897,6 +1137,9 @@ addEventListener("popstate",()=>{
   if(S.skipPop){S.skipPop=false;return}
   if(overlayOpen()){S.ov=false;hideSheet();S.returnDock=null;S.dock=null;renderDock()}
   S.ov=false;
+  const wantHub=location.hash.slice(1).startsWith("hub");
+  if(S.view==="hub"&&!wantHub){showHome();return}
+  if(wantHub){if(S.view!=="hub"){if(S.hub){S.view="hub";render(false)}else history.replaceState(null,"","#home")}return}
   const wantCal=location.hash.slice(1).startsWith("cal");
   if(wantCal!==(S.view==="cal")){S.calPushed=false;if(wantCal)route();else showHome()}
 });
@@ -1090,7 +1333,7 @@ function cheer(msg,undo){toast(msg,undo);if(reduced())return;
   let f=0;const st=()=>{x.clearRect(0,0,W,H);P.forEach(p=>{p.vy+=.45*dpr;p.x+=p.vx;p.y+=p.vy;p.a+=.2;x.save();x.translate(p.x,p.y);x.rotate(p.a);x.fillStyle=p.c;x.fillRect(-p.r,-p.r/2,p.r*2,p.r);x.restore()});if(++f<70)requestAnimationFrame(st);else c.remove()};st()}
 function toggleTask(t,el){
   const before=strip(t),done=!t.done,undo=()=>save("tasks",t.id,before);
-  const commit=()=>{save("tasks",t.id,{...before,done});S.blocks.filter(b=>b.taskId===t.id&&!!b.done!==done).forEach(b=>save("blocks",b.id,{...strip(b),done}));
+  const commit=()=>{const rec={...before,done};if(done){rec.doneAt=Date.now();delete rec.review}else delete rec.doneAt;save("tasks",t.id,rec);S.blocks.filter(b=>b.taskId===t.id&&!!b.done!==done).forEach(b=>save("blocks",b.id,{...strip(b),done}));
     if(!done){toast("Marked not done",undo);return}
     const ds=t.date&&t.date>=todayStr()?t.date:todayStr(),top=topFor(ds);
     if(t.priority==="top"&&top.length&&top.every(x=>x.id===t.id||x.done))cheer("Priorities done. Great day.",undo);else toast("Done",undo)};
@@ -1102,7 +1345,7 @@ function quickBlock(d){const g=firstGap(d,60);openSheet("blocks",null,{date:d,st
 const pt=e=>({x:e.clientX,y:e.clientY});
 document.addEventListener("change",e=>{
   const cb=e.target.closest("[data-step]");
-  if(cb){const r=resolve(cb.dataset.key);if(!r)return;const st=(r.rec.steps||[]).map(x=>({...x}));st[+cb.dataset.step].done=cb.checked;save(r.col,r.rec.id,{...strip(r.rec),steps:st});if(cb.checked&&st.every(x=>x.done))cheer("All steps done");return}
+  if(cb){const r=resolve(cb.dataset.key);if(!r)return;const st=(r.rec.steps||[]).map(x=>({...x}));st[+cb.dataset.step].done=cb.checked;save(r.col,r.rec.id,{...strip(r.rec),steps:st});if(cb.checked&&st.every(x=>x.done)){if(r.col==="tasks"&&!r.rec.done){const before={...strip(r.rec),steps:(r.rec.steps||[]).map(x=>({...x}))};save("tasks",r.rec.id,{...strip(r.rec),steps:st,done:true,doneAt:Date.now()});cheer("All steps done, so the task is ticked",()=>save("tasks",r.rec.id,before))}else cheer("All steps done")}return}
   if(e.target.id==="dNote"){const k=e.target.dataset.key,v=e.target.value.trim(),r=resolve(k);if(!r)return;const old=r.col==="routines"?(r.rec.dayNotes?.[r.date]||""):(r.rec.notes||"");if(v===old)return;setItemNote(k,v);toast(v?"Note saved":"Note removed")}
 });
 document.addEventListener("input",e=>{
@@ -1140,6 +1383,7 @@ document.addEventListener("click",e=>{
   const sle=e.target.closest("[data-slotedit]");if(sle){openSlot((S.slots||[]).find(x=>x.id===sle.dataset.slotedit));return}
   if(e.target.closest("[data-slotnew]")){openSlot(null);return}
   const op=e.target.closest("[data-open]");if(op){openDock(op.dataset.open);return}
+  if(hubClick(e))return;
   /* Home */
   const sd=e.target.closest("[data-sel]");if(sd){const d=sd.dataset.sel;if(d!==homeSel()){setSel(d);S.earlier=false;render()}return}
   const smo=e.target.closest("[data-selmonth]");if(smo){const c=fromYmd(homeSel()),n=+smo.dataset.selmonth,t=new Date(c.getFullYear(),c.getMonth()+n,1),last=new Date(t.getFullYear(),t.getMonth()+1,0).getDate(),now=new Date();const pick=(t.getMonth()===now.getMonth()&&t.getFullYear()===now.getFullYear())?todayStr():ymd(new Date(t.getFullYear(),t.getMonth(),Math.min(c.getDate(),last)));setSel(pick);S.earlier=false;render();return}
@@ -1210,7 +1454,7 @@ setInterval(()=>{if(S.view!=="home")return;const n=new Date(),el=$("#dmain"),t=h
 /* every 30 seconds: keep times live, without moving the page */
 setInterval(()=>{applyTint();if($("#sheetRoot").innerHTML||$("#focus"))return;
   if(["qaIn","dNote","dStepIn"].includes(document.activeElement?.id))return;
-  if(S.view==="home"||(S.view==="cal"&&(S.zoom==="week"||(S.zoom==="day"&&ymd(S.cur)===todayStr()))))render();else renderNowbar()},30000);
+  if(S.view==="home"||S.view==="hub"||(S.view==="cal"&&(S.zoom==="week"||(S.zoom==="day"&&ymd(S.cur)===todayStr()))))render();else renderNowbar()},30000);
 
 /* ---------- store: cached data shows at once, fresh data follows ---------- */
 function applyData(d){

@@ -110,10 +110,46 @@ function db(): Sql {
     prepare: false, // Supabase's pooled connection doesn't keep prepared statements
     max: 1,
     idle_timeout: 20,
+    max_lifetime: 60 * 5,
     connect_timeout: 10,
     onnotice: () => {},
   });
   return sqlClient;
+}
+
+/** Drops the connection so the next call opens a fresh one. */
+function resetDb() {
+  const old = sqlClient;
+  sqlClient = null;
+  schemaReady = null;
+  if (old) old.end({ timeout: 0 }).catch(() => undefined);
+}
+/**
+ * Runs one piece of database work with a time limit. A server instance can be paused between requests,
+ * and the connection it held may be dead when it wakes; a query sent down a dead connection never answers.
+ * On a timeout or a dropped connection, the connection is replaced and the work runs once more.
+ * Everything passed in is safe to run twice: reads, and writes that set a row to a value.
+ */
+async function withDb<T>(work: (sql: Sql) => Promise<T>, ms = 8000): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        work(db()),
+        new Promise<never>((_, no) => {
+          timer = setTimeout(() => no(Object.assign(new Error("The planner's database took too long to answer."), { code: "PLANNER_TIMEOUT" })), ms);
+        }),
+      ]);
+    } catch (e) {
+      const code = String((e as { code?: string }).code || "");
+      const dropped = ["PLANNER_TIMEOUT", "CONNECTION_CLOSED", "CONNECTION_ENDED", "CONNECTION_DESTROYED", "CONNECT_TIMEOUT", "ECONNRESET", "EPIPE", "ETIMEDOUT"].includes(code);
+      if (!dropped || attempt >= 1) throw e;
+      console.error("Planner database connection replaced after", code);
+      resetDb();
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
 }
 
 let schemaReady: Promise<unknown> | null = null;
@@ -211,14 +247,14 @@ async function writeMarker(info: object) {
 
 /** Copies the data file into the database once. Safe to call from several server instances at the same time. */
 async function migrateOnce() {
-  const sql = db();
   // The usual case is one round trip: the copy was made on an earlier start.
   try {
-    const done = await sql`select 1 from planner_kv where key = 'migrated'`;
+    const done = await withDb((q) => q`select 1 from planner_kv where key = 'migrated'`);
     if (done.length) return;
   } catch (e) {
     if ((e as { code?: string }).code !== "42P01") throw e; // anything but "the table doesn't exist yet"
   }
+  const sql = db();
   await ensureSchema();
   const { data } = await fileLoad();
   const counts = Object.fromEntries(COLLECTIONS.map((c) => [c, data[c].length]));
@@ -252,7 +288,7 @@ async function usePg(): Promise<boolean> {
 }
 
 export async function loadData(): Promise<Data> {
-  if (await usePg()) return pgLoad();
+  if (await usePg()) return withDb((sql) => pgLoad(sql));
   return (await fileLoad()).data;
 }
 
@@ -262,12 +298,11 @@ let queue: Promise<unknown> = Promise.resolve();
 export function updateData<T>(fn: (d: Data) => T | Promise<T>): Promise<T> {
   const run = queue.then(async () => {
     if (await usePg()) {
-      const data = await pgLoad();
+      const data = await withDb((sql) => pgLoad(sql));
       const before = snapshot(data);
       const out = await fn(data);
       // Sent together as one batch, so a save costs 1 extra round trip however many rows it touches.
-      const sql = db();
-      if (diffQueries(sql, before, data).length) await sql.begin((tx) => diffQueries(tx as unknown as Sql, before, data));
+      if (diffQueries(db(), before, data).length) await withDb((sql) => sql.begin((tx) => diffQueries(tx as unknown as Sql, before, data)));
       return out;
     }
     for (let attempt = 0; ; attempt++) {
@@ -289,9 +324,8 @@ export function updateData<T>(fn: (d: Data) => T | Promise<T>): Promise<T> {
 /** Which store is in use, for the Settings screen and for checking the move went through. */
 export async function storeInfo() {
   if (!(await usePg())) return { store: hasBlob() ? "file" : "local file" };
-  const sql = db();
-  const rows = await sql<{ col: string; n: number }[]>`select col, count(*)::int as n from planner_items group by col`;
-  const m = await sql<{ data: unknown }[]>`select data from planner_kv where key = 'migrated'`;
+  const rows = await withDb((sql) => sql<{ col: string; n: number }[]>`select col, count(*)::int as n from planner_items group by col`);
+  const m = await withDb((sql) => sql<{ data: unknown }[]>`select data from planner_kv where key = 'migrated'`);
   return { store: "database", counts: Object.fromEntries(rows.map((r) => [r.col, r.n])), migrated: m[0]?.data ?? null };
 }
 
@@ -299,15 +333,16 @@ export async function storeInfo() {
 export async function dailyBackup(today: string) {
   try {
     if (!hasBlob() || !(await usePg())) return;
-    const sql = db();
-    const last = await sql<{ data: unknown }[]>`select data from planner_kv where key = 'lastBackup'`;
+    const last = await withDb((sql) => sql<{ data: unknown }[]>`select data from planner_kv where key = 'lastBackup'`);
     if (last[0]?.data === today) return;
-    const data = await pgLoad();
-    await put(`planner/backups/${today}.json`, JSON.stringify(data), { access: "private", allowOverwrite: true, addRandomSuffix: false, contentType: "application/json" });
-    await sql`insert into planner_kv (key, data) values ('lastBackup', ${sql.json(today)})
-      on conflict (key) do update set data = excluded.data, updated_at = now()`;
-    const old = (await list({ prefix: "planner/backups/" })).blobs.map((b) => b.pathname).sort().slice(0, -14);
-    if (old.length) await del(old);
+    const data = await withDb((sql) => pgLoad(sql));
+    // Mark the day first, so a slow copy is never started twice by the next check.
+    await withDb((sql) => sql`insert into planner_kv (key, data) values ('lastBackup', ${sql.json(today)})
+      on conflict (key) do update set data = excluded.data, updated_at = now()`);
+    const limit = <T,>(p: Promise<T>) => Promise.race([p, new Promise<never>((_, no) => setTimeout(() => no(new Error("storage took too long")), 15000))]);
+    await limit(put(`planner/backups/${today}.json`, JSON.stringify(data), { access: "private", allowOverwrite: true, addRandomSuffix: false, contentType: "application/json" }));
+    const old = (await limit(list({ prefix: "planner/backups/" }))).blobs.map((b) => b.pathname).sort().slice(0, -14);
+    if (old.length) await limit(del(old));
   } catch (e) {
     console.error("Planner backup failed", e instanceof Error ? e.message : e);
   }

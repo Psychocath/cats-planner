@@ -6,6 +6,8 @@ import { safeEqual } from "@/lib/auth";
 import { loadRolled } from "@/lib/slots";
 
 export const dynamic = "force-dynamic";
+// A stuck request ends after 60 seconds instead of Vercel's default of 300.
+export const maxDuration = 60;
 
 // Called every few minutes by a scheduler (Vercel Cron on Pro, or cron-job.org on Hobby).
 export async function GET(req: Request) {
@@ -66,7 +68,12 @@ export async function GET(req: Request) {
   const mkey = `morning|${now.date}`;
   const mAt = data.settings.morning ? toMin(data.settings.morning) : -1;
   const morningDue = mAt >= 0 && !data.sent[mkey] && mAt <= now.minute + 2 && mAt > now.minute - 10;
-  if (!due.length && !morningDue) {
+  // End of the work day, Monday to Friday: one nudge to tick what got done, if anything is still open.
+  const wkey = `wrap|${now.date}`;
+  const wAt = toMin(data.settings.workEnd);
+  const openNow = data.tasks.filter((t) => !t.done && !t.ai && !t.waiting && t.date && String(t.date) <= now.date && !/\bshopping\s*$/i.test(String(t.title || ""))).length;
+  const wrapDue = now.wd <= 5 && openNow > 0 && !data.sent[wkey] && wAt <= now.minute + 2 && wAt > now.minute - 10;
+  if (!due.length && !morningDue && !wrapDue) {
     if (staleCheck) await updateData((d) => { d.lastCheck = Date.now(); });
     return NextResponse.json({ ok: true, due: 0 });
   }
@@ -101,11 +108,17 @@ export async function GET(req: Request) {
     r.dead.forEach((e) => dead.add(e));
   }
 
+  if (wrapDue) {
+    const r = await sendToAll(data.subs, { title: "Wrap up your day", body: `${openNow} task${openNow > 1 ? "s" : ""} still open. Tick what you finished; the rest moves on overnight.`, tag: wkey }, data);
+    r.dead.forEach((e) => dead.add(e));
+  }
+
   const weekAgo = Date.now() - 7 * 864e5;
   await updateData((d) => {
     d.lastCheck = Date.now();
     due.forEach(({ key }) => (d.sent[key] = Date.now()));
     if (morningDue) d.sent[mkey] = Date.now();
+    if (wrapDue) d.sent[wkey] = Date.now();
     for (const k of Object.keys(d.sent)) if (d.sent[k] < weekAgo) delete d.sent[k];
     if (dead.size) d.subs = d.subs.filter((s) => !dead.has(s.endpoint));
   });

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { updateData } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
+// A stuck request ends after 30 seconds instead of Vercel's default of 300.
+export const maxDuration = 30;
 
 function randomKey() {
   const b = new Uint8Array(24);

@@ -7,6 +7,9 @@ const MAX_FAILS = 5;
 const WINDOW = 15 * 60000;
 const LOCK = 15 * 60000;
 
+// A stuck request ends after 30 seconds instead of Vercel's default of 300.
+export const maxDuration = 30;
+
 export async function POST(req: Request) {
   const expected = process.env.APP_PASSWORD;
   if (!expected) return NextResponse.json({ error: "The app has no password set yet." }, { status: 500 });
