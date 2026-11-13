@@ -4,13 +4,15 @@ import { promises as fs } from "fs";
 import path from "path";
 
 export type Item = Record<string, unknown> & { id: string };
-export type Settings = { workStart: string; workEnd: string; leadMin: number; morning?: string | null; palette?: string };
+export type Settings = { workStart: string; workEnd: string; leadMin: number; morning?: string | null; palette?: string; billsSeeded?: boolean };
 export type PushSub = { endpoint: string; keys: { p256dh: string; auth: string }; addedAt: number };
 export type Data = {
   tasks: Item[];
   blocks: Item[];
   routines: Item[];
   slots: Item[];
+  /** Bills to pay, with banking details. Kept server-side only, like everything else, behind the login. */
+  bills: Item[];
   settings: Settings;
   subs: PushSub[];
   sent: Record<string, number>;
@@ -20,7 +22,7 @@ export type Data = {
   /** Wrong-password attempts: when each recent one happened, and when a lock ends. */
   login?: { fails: number[]; lockedUntil?: number };
 };
-export const COLLECTIONS = ["tasks", "blocks", "routines", "slots"] as const;
+export const COLLECTIONS = ["tasks", "blocks", "routines", "slots", "bills"] as const;
 export type Collection = (typeof COLLECTIONS)[number];
 
 const BLOB_PATH = "planner/data.json";
@@ -31,6 +33,7 @@ export const emptyData = (): Data => ({
   blocks: [],
   routines: [],
   slots: [],
+  bills: [],
   settings: { workStart: "09:00", workEnd: "16:00", leadMin: 10 },
   subs: [],
   sent: {},

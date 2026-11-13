@@ -196,3 +196,59 @@ export async function apply(actions: { name: string; args: Record<string, unknow
   }
   return done;
 }
+
+/* ---------- Bills: Gemini reads a payment SMS, email or screenshot into bill card fields ----------
+   Nothing is saved here. The app shows the filled card and Cat checks every field before she saves it. */
+export type BillFields = {
+  payee: string; amount: number | null; bank: string; accountType: string; accountNo: string; branch: string;
+  ref: string; due: string; proofEmail: string; category: string; repeats: string; notes: string;
+};
+const BILL_SCHEMA = {
+  type: "object",
+  properties: {
+    payee: { type: "string", description: "Who is paid, as the bank account is named. Empty if not given." },
+    amount: { type: "number", description: "Amount in rand as a plain number, e.g. 320.00. 0 if not given." },
+    bank: { type: "string", description: "Bank name, e.g. Investec, FNB, Standard Bank, Absa, Nedbank, Capitec" },
+    accountType: { type: "string", description: "e.g. current, cheque, savings. Empty if not given." },
+    accountNo: { type: "string", description: "Account number, digits only. Empty if not given." },
+    branch: { type: "string", description: "Branch code, digits only. Empty if not given." },
+    ref: { type: "string", description: "The payment reference the payee asked for. Empty if not given." },
+    due: { type: "string", description: "Due date YYYY-MM-DD if the message gives one, otherwise empty." },
+    proofEmail: { type: "string", description: "Email address to send proof of payment to. Empty if not given." },
+    category: { type: "string", enum: ["medical", "household", "leo", "work", "other"] },
+    repeats: { type: "string", enum: ["once", "monthly"], description: "monthly only if the message says it is a monthly or recurring amount" },
+    notes: { type: "string", description: "Anything else useful in one short line, e.g. invoice number. Empty if nothing." },
+  },
+  required: ["payee", "amount", "bank", "accountType", "accountNo", "branch", "ref", "due", "proofEmail", "category", "repeats", "notes"],
+};
+
+export async function readBill(text: string, image?: { mime: string; data: string }): Promise<BillFields> {
+  const today = localNow().date;
+  const parts: Record<string, unknown>[] = [];
+  if (text) parts.push({ text: `The message:\n${text}` });
+  if (image) parts.push({ inlineData: { mimeType: image.mime, data: image.data } });
+  const out = await gemini({
+    systemInstruction: { parts: [{ text: `You read a South African bill or payment request (an SMS, an email or a screenshot of one) and copy its payment details into fields. Today is ${today}.
+Copy numbers exactly as written, without spaces. Never guess or make up a value: leave a field empty (amount 0) when the message doesn't give it.
+Leo is Cat's son, so a bill for Leo (school, aftercare, his doctor) is category leo. Doctors, dentists and pharmacies are medical.` }] },
+    contents: [{ role: "user", parts }],
+    generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: BILL_SCHEMA },
+  });
+  const raw = out.filter((p) => p.text && !p.thought).map((p) => p.text).join("");
+  let j: Record<string, unknown> = {};
+  try {
+    j = JSON.parse(raw);
+  } catch {
+    throw new Error("Gemini couldn't read that message. Try pasting the text, or add the bill yourself.");
+  }
+  const s = (k: string) => String(j[k] ?? "").trim();
+  const digits = (k: string) => s(k).replace(/[\s-]/g, "");
+  const amt = Number(j.amount);
+  const due = /^\d{4}-\d{2}-\d{2}$/.test(s("due")) ? s("due") : "";
+  return {
+    payee: s("payee"), amount: amt > 0 ? Math.round(amt * 100) / 100 : null, bank: s("bank"), accountType: s("accountType"),
+    accountNo: digits("accountNo"), branch: digits("branch"), ref: s("ref"), due, proofEmail: s("proofEmail"),
+    category: ["medical", "household", "leo", "work", "other"].includes(s("category")) ? s("category") : "other",
+    repeats: s("repeats") === "monthly" ? "monthly" : "once", notes: s("notes"),
+  };
+}

@@ -1158,3 +1158,51 @@ body.homehead #dsub{display:flex;align-items:center;gap:10px;flex-wrap:wrap;marg
 .tmenu{display:grid;gap:8px}
 .tmenu h3{margin:0 0 6px;font-size:1.05rem}
 .tmenu button{justify-content:flex-start;gap:10px;min-height:48px}
+
+/* ---------- Bills ---------- */
+.billcard{margin-top:14px;padding:14px 16px;border-radius:18px;background:var(--k-me-bg);border:1px solid color-mix(in srgb,var(--k-me) 35%,var(--line))}
+.billcard.late{background:color-mix(in srgb,var(--now) 10%,var(--surface));border-color:color-mix(in srgb,var(--now) 40%,var(--line))}
+.billcard .dn-l{color:color-mix(in srgb,var(--k-me) 75%,var(--ink))}
+.billcard.late .dn-l{color:var(--now)}
+.billcard .hbar{margin:4px 0 10px}
+.billcard .card{padding:4px 12px}
+.trow.bill .tmain b{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.bamt{flex:none;font-variant-numeric:tabular-nums;font-weight:800;color:var(--ink)}
+.trow.bill.done .tmain b,.trow.bill.done .bamt{text-decoration:line-through;color:var(--muted)}
+.trow.bill .dline{font-size:.84rem;color:var(--muted)}
+.trow.bill.proof .tlink{align-self:center}
+.bl-late{color:var(--now);font-weight:700}
+.bl-urg{color:var(--warn-ink);font-weight:700}
+.bl-miss{color:var(--warn-ink);font-weight:700;display:inline-flex;align-items:center;gap:3px}
+.bl-miss .ic{width:1em;height:1em}
+.wd .trow.bill{padding:4px 10px;border-bottom:0}
+.bills .bhead{display:grid;gap:2px}
+.bills .bhead b{font-family:var(--f-display);font-size:1.35rem}
+.bills .bhead small{color:var(--muted);font-size:.88rem}
+.badd{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.badd .primary{flex:1;min-height:44px}
+.badd .ghost{display:inline-flex;align-items:center;gap:6px}
+.badd .ic,.bsheet .acts .ic,.bfile .ic{width:1.1em;height:1.1em}
+.bbig{margin:-6px 0 0;font-family:var(--f-display);font-size:1.8rem;font-weight:700;display:grid}
+.bbig small{font-family:inherit;font-size:.9rem;font-weight:600;color:var(--muted)}
+.bwarn{margin:0;display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--k-admin-bg);color:var(--warn-ink);font-size:.92rem;font-weight:600}
+.bwarn .ic{flex:none;width:1.1em;height:1.1em;margin-top:2px}
+.bfields{display:grid;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.bf{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"l b" "v b";align-items:center;column-gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);min-height:52px}
+.bf:last-child{border-bottom:0}
+.bf .bl{grid-area:l;font-size:.78rem;font-weight:700;color:var(--muted)}
+.bf .bv{grid-area:v;font-weight:600;font-size:1.02rem;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.bf .bv em{font-style:normal;color:var(--warn-ink)}
+.bf.miss{background:var(--k-admin-bg)}
+.bcp{grid-area:b;display:inline-flex;align-items:center;gap:5px;min-height:40px;padding:0 12px;border-radius:10px;border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line));background:var(--surface);color:var(--accent);font-weight:700;font-size:.88rem;text-decoration:none;cursor:pointer}
+.bcp .ic{width:1em;height:1em}
+.bsheet .acts>*{flex:1}
+.bmail{display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}
+.bfile{display:inline-flex;align-items:center;gap:8px;cursor:pointer;justify-self:start}
+.f.miss input{border-color:var(--k-admin);background:var(--k-admin-bg)}
+.f.miss label::after{content:" · needed";font-weight:600;color:var(--warn-ink)}
+.bcheck{padding:12px;border-radius:12px;background:var(--k-admin-bg);border:1px solid color-mix(in srgb,var(--k-admin) 40%,var(--line));display:grid;gap:8px}
+.bcheck.changed{background:color-mix(in srgb,var(--now) 10%,var(--surface));border-color:color-mix(in srgb,var(--now) 45%,var(--line))}
+.bcheck p{margin:0;font-size:.92rem;color:var(--ink)}
+.bcheck label{display:flex;gap:10px;align-items:center;font-weight:700;font-size:.92rem}
+.bcheck input{width:22px;height:22px;min-height:0;flex:none;accent-color:var(--accent)}

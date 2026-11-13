@@ -81,11 +81,12 @@ function hubBlocksHtml(){
   const famNext=hubUpcoming(it=>(it.kind||"work")==="family",8)[0];
   const pt=hubPersonalTasks(),inbox=S.tasks.filter(t=>hubOpen(t)&&t.inbox).length;
   const wins=S.tasks.filter(t=>t.done&&t.doneAt&&ymd(new Date(t.doneAt))===td).length;
+  const bOpen=(S.bills||[]).filter(b=>!b.paid&&b.due&&b.due<=nextPayday()),bLate=bOpen.filter(billLate).length;
   const shops=S.tasks.filter(t=>isShop(t)&&!t.done),left=shops.reduce((a,t)=>a+(t.steps||[]).filter(x=>!x.done).length,0);
   const L={
     clients:cl.length?cl.slice(0,2).map(c=>`${esc(c.name)}: ${nOpen(c)} open`):["No client tasks yet",""],
     family:[famNext?`Next: ${esc(famNext.it.title)}, ${hubDay(famNext.ds).toLowerCase()} ${famNext.it.start}`:"Nothing in the next week",ppl.map(p=>`${esc(p)}: ${S.tasks.filter(t=>hubOpen(t)&&hubHas(t,p)).length} open`).join(" · ")],
-    personal:[`${pt.length} task${pt.length===1?"":"s"} open`,`Inbox ${inbox} · Wins today ${wins}`],
+    personal:[`${pt.length} task${pt.length===1?"":"s"} open`+(bOpen.length?` · bills ${rands(billSum(bOpen))}${bLate?`, ${bLate} overdue`:""}`:""),`Inbox ${inbox} · Wins today ${wins}`],
     food:[left?`${left} item${left===1?"":"s"} to buy`:"Shopping list is empty",shops.length?shops.map(t=>esc(String(t.title).replace(/\s*shopping\s*$/i,""))).slice(0,3).join(" · "):""]};
   return `<section class="sec hubs" aria-label="Your hubs"><div class="sech"><h2>${ic("flag")}Your hubs</h2></div><div class="hubg">${HUBS.map(h=>`<button type="button" class="hubb ${h.c}" data-hub="${h.k}"><span class="hb-h">${ic(h.i)}<b>${h.t}</b>${ic("right","go")}</span><small>${L[h.k][0]||""}</small><small>${L[h.k][1]||""}</small></button>`).join("")}</div></section>`;
 }
@@ -139,7 +140,7 @@ function hubPersonalPage(){
   const me=hubUpcoming(it=>(it.kind||"work")==="me",14);
   const rt=hubUpcoming(it=>it.src==="routines"&&(it.kind||"work")!=="family",8);
   const wins=S.tasks.filter(t=>t.done&&t.doneAt&&t.doneAt>=weekAgo).sort((a,b)=>b.doneAt-a.doneAt),today=wins.filter(t=>ymd(new Date(t.doneAt))===td).length;
-  return hubSec("Me time",me.length,me.map(hubEvRow).join(""),"No me time booked in the next 2 weeks.")
+  return billsBlockHtml()+hubSec("Me time",me.length,me.map(hubEvRow).join(""),"No me time booked in the next 2 weeks.")
     +hubSec("Personal tasks",pt.length,hubTaskList(pt),"No personal tasks open.")
     +hubSec("Routines",rt.length,rt.map(hubEvRow).join(""),"No personal routines yet.")
     +hubSec(`Wins this week`,wins.length,wins.slice(0,15).map(t=>`<button type="button" class="crow task dn" data-open="tasks:${t.id}"><span class="cd">${hubDay(ymd(new Date(t.doneAt)))}</span><span class="tt"><b>${esc(t.title)}</b></span></button>`).join(""),"Tick a task and it shows here. Wins are counted from today on.")
@@ -242,7 +243,7 @@ const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","De
 const MONL=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYL=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const LEVEL={month:0,week:1,day:2};
-const S={work:{start:"09:00",end:"16:00"},view:"home",zoom:"day",cur:new Date(),tasks:[],blocks:[],routines:[],slots:[],lead:10,alertsHere:false,devices:0,open:null,dock:null,scroll:{}};
+const S={work:{start:"09:00",end:"16:00"},view:"home",zoom:"day",cur:new Date(),tasks:[],blocks:[],routines:[],slots:[],bills:[],lead:10,alertsHere:false,devices:0,open:null,dock:null,scroll:{}};
 S.cur.setHours(0,0,0,0);
 
 /* ---------- helpers ---------- */
@@ -283,7 +284,7 @@ function applyTint(){const h=new Date().getHours();document.documentElement.setA
 applyTint();
 
 /* ---------- line icons (stroke, currentColor) ---------- */
-const IC={more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',cart:`<path d="M3 4h2l2.4 11h10.2L20 7H6.2"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>`,
+const IC={copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',cart:`<path d="M3 4h2l2.4 11h10.2L20 7H6.2"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>`,
  work:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
  family:'<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.5A5 5 0 0 1 21 20"/>',
  admin:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>',
@@ -362,7 +363,7 @@ async function api(body){
   if(!r.ok){let m="Couldn't save. Check your connection and try again.";try{m=(await r.json()).error||m}catch(_){}throw new Error(m)}
   return r.json();
 }
-function cacheData(){store.set("cache",{tasks:S.tasks,blocks:S.blocks,routines:S.routines,slots:S.slots,settings:{workStart:S.work.start,workEnd:S.work.end,leadMin:S.lead,morning:S.morning,palette:S.palette}})}
+function cacheData(){store.set("cache",{tasks:S.tasks,blocks:S.blocks,routines:S.routines,slots:S.slots,bills:S.bills,settings:{workStart:S.work.start,workEnd:S.work.end,leadMin:S.lead,morning:S.morning,palette:S.palette}})}
 async function save(col,id,data){
   const list=S[col],i=list.findIndex(x=>x.id===id),rec={...data,id};
   if(i>=0)list[i]=rec;else{list.push(rec);S.flash=id;setTimeout(()=>S.flash=null,800)}
@@ -664,7 +665,7 @@ function taskItem(t,dl,ds){
 }
 function dayList(ds,its,tasks,dl){
   const one=its.filter(i=>i.src!=="routines"),rt=its.filter(i=>i.src==="routines");
-  let h=one.map(it=>evRow(it,ds)).join("")+(tasks||[]).map(t=>taskItem(t,false,ds)).join("")+(dl||[]).map(t=>taskItem(t,true,ds)).join("");
+  let h=one.map(it=>evRow(it,ds)).join("")+(tasks||[]).map(t=>taskItem(t,false,ds)).join("")+(dl||[]).map(t=>taskItem(t,true,ds)).join("")+billsDue(ds).map(billRow).join("");
   if(rt.length)h+=`<div class="rstrip">${rt.map(it=>`<button class="rchip k-${it.kind||"work"} ${timing(it,ds)}" data-open="routines:${it.id}:${ds}">${ic(itemIcon(it,"repeat"))}<span>${it.start}</span>${esc(it.title)}</button>`).join("")}</div>`;
   return h||`<div class="wi none">Nothing planned</div>`;
 }
@@ -718,7 +719,7 @@ const grpSet=(k,v)=>{S.grp[k]=v;store.set("grp",S.grp)};
 
 function renderHome(){
   const ds=homeSel();
-  $("#view").innerHTML=`<div class="homev">${homeTopHtml()}${quickAddHtml()}${wrapUpHtml()}${doNowHtml()}${homeMonthHtml(ds)}${agendaHtml(ds)}${workListHtml(ds)}${hubBlocksHtml()}${attentionHtml(ds)}${prioritiesHtml(ds)}${otherTasksHtml(ds)}${comingUpHtml(ds)}</div>`;
+  $("#view").innerHTML=`<div class="homev">${homeTopHtml()}${quickAddHtml()}${wrapUpHtml()}${doNowHtml()}${homeMonthHtml(ds)}${billsHomeHtml()}${agendaHtml(ds)}${workListHtml(ds)}${hubBlocksHtml()}${attentionHtml(ds)}${prioritiesHtml(ds)}${otherTasksHtml(ds)}${comingUpHtml(ds)}</div>`;
   loadWeather();
 }
 
@@ -728,7 +729,7 @@ function homeTopHtml(){const n=shopOpen();
 function quickAddHtml(){
   const v=S.qa||"";
   return `<section class="qadd-w"><div class="addrow"><button type="button" class="madd" data-manualadd aria-label="Add with all the details">${ic("plus")}</button><form class="qadd" id="qadd" autocomplete="off"><input id="qaIn" value="${esc(v)}" placeholder="Quick add: just type it, I'll sort it" aria-label="Quick add: type a task, event or thought" enterkeyhint="send"><button type="submit" class="qgo" aria-label="Send to the planner assistant">${ic("send")}</button></form></div>
-  <div class="qopts" id="qopts" ${v.trim()?"":"hidden"} role="group" aria-label="How to add it"><span class="qhint">${ic("sparkle")}Gemini plans it when you press send</span><button type="button" data-qadd="inbox">${ic("task")}Just add to Inbox</button><button type="button" data-qadd="form">${ic("pen")}Add details myself</button></div></section>`;
+  <div class="qopts" id="qopts" ${v.trim()?"":"hidden"} role="group" aria-label="How to add it"><span class="qhint">${ic("sparkle")}Gemini plans it when you press send</span><button type="button" data-qadd="inbox">${ic("task")}Just add to Inbox</button><button type="button" data-qadd="bill">${ic("money")}It's a bill</button><button type="button" data-qadd="form">${ic("pen")}Add details myself</button></div></section>`;
 }
 function quickInbox(t){const id=uid();save("tasks",id,{title:t,date:null,priority:"normal",mins:null,done:false,inbox:true,createdAt:Date.now()});S.qa="";render();toast("Added to Inbox",()=>remove("tasks",id));setTimeout(()=>{const n=$("#qaIn");if(n)n.focus({preventScroll:true})},30)}
 
@@ -739,7 +740,7 @@ function homeMonthHtml(ds){
   for(let w=0;w<6;w++){const m=addDays(start,w*7);if(w>0&&m.getMonth()!==first.getMonth())break;
     rows+=`<div class="hmrow">`;
     for(let i=0;i<7;i++){const d=addDays(m,i),x=ymd(d),inM=d.getMonth()===first.getMonth(),ev=itemsFor(x).filter(y=>y.src!=="routines"),tk=tasksDue(x).filter(t=>!t.done),dl=deadlinesFor(x).filter(t=>!t.done),hol=ev.find(y=>/^Public holiday/i.test(y.title));
-      const bars=[...ev.filter(y=>y!==hol).map(y=>`<i class="k-${y.kind||"work"}"></i>`),...dl.map(()=>`<i class="bdl"></i>`),...tk.map(()=>`<i class="btk"></i>`)];
+      const bars=[...ev.filter(y=>y!==hol).map(y=>`<i class="k-${y.kind||"work"}"></i>`),...dl.map(()=>`<i class="bdl"></i>`),...tk.map(()=>`<i class="btk"></i>`),...billsDue(ds).filter(b=>!b.paid).map(()=>`<i class="btk"></i>`)];
       const mins={};ev.forEach(y=>{const k=y.kind||"work";mins[k]=(mins[k]||0)+toMin(y.end)-toMin(y.start)});const top=Object.entries(mins).sort((a,b)=>b[1]-a[1])[0];
       const nev=ev.length,ntk=tk.length+dl.length,lab=`${longD(x)}${x===td?", today":""}${nev||ntk?`: ${nev?nev+" event"+(nev>1?"s":""):""}${nev&&ntk?", ":""}${ntk?ntk+" task"+(ntk>1?"s":""):""}`:": nothing planned"}`;
       rows+=`<button type="button" class="mday ${inM?"":"out"} ${i>4?"we":""} ${x===td?"today":""} ${x===ds?"sel":""} ${hol?"hol":""} ${top?"k-"+top[0]:""}" data-sel="${x}" aria-pressed="${x===ds}" aria-label="${esc(lab)}"><span class="fill" style="height:${bookedPct(x)}%"></span><span class="num">${d.getDate()}</span><span class="bars">${bars.slice(0,4).join("")}</span>${bars.length>4?`<span class="bmore">+${bars.length-4}</span>`:""}</button>`}
@@ -1022,8 +1023,8 @@ function timelineHtml(ds,work){
 function calDayTasks(ds){
   if(!tasksShown())return"";
   const isToday=ds===todayStr(),tk=S.tasks.filter(t=>t.date===ds||(isToday&&carried(t))).sort((a,b)=>a.done-b.done),dl=deadlinesFor(ds).filter(t=>!t.done);
-  if(!tk.length&&!dl.length)return"";
-  return `<section class="sec"><div class="sech"><h2>${ic("task")}Tasks for ${esc(dayWord(ds))}</h2><span class="cnt">${tk.filter(t=>t.done).length} of ${tk.length} done</span></div><div class="card list">${tk.map(t=>trow(t,ds)).join("")}${dl.map(t=>taskItem(t,true,ds)).join("")}</div></section>`;
+  const bl=billsDue(ds);if(!tk.length&&!dl.length&&!bl.length)return"";
+  return `<section class="sec"><div class="sech"><h2>${ic("task")}Tasks for ${esc(dayWord(ds))}</h2><span class="cnt">${tk.filter(t=>t.done).length} of ${tk.length} done</span></div><div class="card list">${tk.map(t=>trow(t,ds)).join("")}${dl.map(t=>taskItem(t,true,ds)).join("")}${bl.map(billRow).join("")}</div></section>`;
 }
 
 /* ---------- week: load bars, then every day in full ---------- */
@@ -1053,7 +1054,7 @@ function renderMonth(){
   for(let w=0;w<6;w++){const m=addDays(start,w*7);if(w>0&&m.getMonth()!==first.getMonth())break;
     h+=`<div class="mrow" role="button" tabindex="0" data-zweek="${ymd(m)}" aria-label="Week of ${shortD(ymd(m))}. Open the week">`;
     for(let i=0;i<7;i++){const d=addDays(m,i),ds=ymd(d),ev=itemsFor(ds).filter(x=>x.src!=="routines"),tk=tasksDue(ds).filter(t=>!t.done),dl=deadlinesFor(ds).filter(t=>!t.done),hol=ev.find(x=>/^Public holiday/i.test(x.title));
-      const bars=[...ev.filter(x=>x!==hol).map(x=>`<i class="k-${x.kind||"work"}"></i>`),...dl.map(()=>`<i class="bdl"></i>`),...tk.map(()=>`<i class="btk"></i>`)];
+      const bars=[...ev.filter(x=>x!==hol).map(x=>`<i class="k-${x.kind||"work"}"></i>`),...dl.map(()=>`<i class="bdl"></i>`),...tk.map(()=>`<i class="btk"></i>`),...billsDue(ds).filter(b=>!b.paid).map(()=>`<i class="btk"></i>`)];
       const mins={};ev.forEach(x=>{const k=x.kind||"work";mins[k]=(mins[k]||0)+toMin(x.end)-toMin(x.start)});const top=Object.entries(mins).sort((a,b)=>b[1]-a[1])[0];
       h+=`<span class="mday ${inMonth(ds)?"":"out"} ${i>4?"we":""} ${ds===td?"today":""} ${hol?"hol":""} ${top?"k-"+top[0]:""}" data-zday-w="${ds}"><span class="fill" style="height:${bookedPct(ds)}%"></span><span class="num">${d.getDate()}</span><span class="bars">${bars.slice(0,4).join("")}</span>${bars.length>4?`<span class="bmore">+${bars.length-4}</span>`:""}</span>`}
     h+=`</div>`}
@@ -1265,6 +1266,236 @@ function openSheet(type,rec,preset){
     closeSheet();toast(clash?`Saved. It overlaps ${clash.title}, ${clash.start} to ${clash.end}`:isNew?"Added":"Saved")};
 }
 
+/* ---------- Bills: every bill in 1 place, lined up for payday on the 29th, each banking detail 1 tap from the banking app ----------
+   Bills are their own records (collection "bills"), kept on the server behind the login like the rest of the planner.
+   They show as tick-box rows on their due date in the calendar, in the Personal hub, and on Home near payday. */
+const BCAT={medical:"Medical",household:"Household",leo:"Leo",work:"Work",other:"Other"};
+const BFIELDS=[["payee","Payee name"],["amount","Amount (R)"],["bank","Bank"],["accountType","Account type"],["accountNo","Account number"],["branch","Branch code"],["ref","Reference"]];
+const BCOPY=new Set(["payee","amount","accountNo","branch","ref"]);
+const BNEED=["payee","amount","bank","accountNo","branch","ref"];
+/* payday is the 29th, or the last day of a shorter month (28 Feb) */
+const paydayOn=(y,m)=>ymd(new Date(y,m,Math.min(29,new Date(y,m+1,0).getDate())));
+function nextPayday(ds){ds=ds||todayStr();const d=fromYmd(ds),p=paydayOn(d.getFullYear(),d.getMonth());return p>=ds?p:paydayOn(d.getFullYear(),d.getMonth()+1)}
+function monthAfter(ds){const d=fromYmd(ds),t=new Date(d.getFullYear(),d.getMonth()+1,1),last=new Date(t.getFullYear(),t.getMonth()+1,0).getDate();return ymd(new Date(t.getFullYear(),t.getMonth(),Math.min(d.getDate(),last)))}
+const rands=n=>"R"+(+n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g," ");
+const billSum=l=>l.reduce((a,b)=>a+(+b.amount||0),0);
+const billLate=b=>!b.paid&&!!b.due&&b.due<todayStr();
+const billMissing=b=>BNEED.filter(k=>k==="amount"?!(+b.amount>0):!String(b[k]||"").trim());
+const billsDue=ds=>tasksShown()?(S.bills||[]).filter(b=>b.due===ds):[];
+const billByDue=(a,b)=>(billLate(b)?1:0)-(billLate(a)?1:0)||(b.urgent&&!b.paid?1:0)-(a.urgent&&!a.paid?1:0)||(a.due||"9999").localeCompare(b.due||"9999");
+const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
+function billWhen(b){
+  if(b.paid)return"Paid "+(b.paidOn?relDay(b.paidOn):"");
+  if(!b.due)return"No due date";
+  if(billLate(b))return"Overdue since "+relDay(b.due);
+  if(b.urgent)return"Urgent · pay "+relDay(b.due);
+  return(b.payday?"Payday, ":"Due ")+(b.due===todayStr()?"today":fmt(fromYmd(b.due),{weekday:"short",day:1,month:"short"}));
+}
+function billRow(b){
+  const miss=b.paid?[]:billMissing(b);
+  const meta=[`<span class="${billLate(b)?"bl-late":b.urgent&&!b.paid?"bl-urg":""}">${esc(billWhen(b))}</span>`,b.repeats==="monthly"?"monthly":"",b.category&&BCAT[b.category]?BCAT[b.category]:"",miss.length?`<span class="bl-miss">${ic("alert")}Details missing</span>`:""].filter(Boolean).join(" · ");
+  return `<div class="trow bill ${b.paid?"done":""} ${billLate(b)?"late":""} ${S.flash===b.id?"grow":""}"><button type="button" class="check" data-billpay="${b.id}" aria-pressed="${!!b.paid}" aria-label="${b.paid?"Mark not paid":"Mark paid"}: ${esc(b.payee)}"><i>${ic("tick")}</i></button><button type="button" class="tmain" data-bill="${b.id}"><b>${esc(b.payee||"Bill")}<span class="bamt">${+b.amount>0?rands(b.amount):"No amount"}</span></b><span class="dline">${meta}</span></button></div>`;
+}
+function proofRow(b){
+  return `<div class="trow bill proof"><button type="button" class="check" data-bproof="${b.id}" aria-pressed="false" aria-label="Proof sent to ${esc(b.payee)}"><i>${ic("tick")}</i></button><button type="button" class="tmain" data-bill="${b.id}"><b>Send proof: ${esc(b.payee)}</b><span class="dline">To ${esc(b.proofEmail)} · paid ${b.paidOn?relDay(b.paidOn):""}</span></button><a class="tlink" href="${proofLink(b)}">${ic("mail")}Email</a></div>`;
+}
+function proofLink(b){
+  const sub=`Proof of payment: ${b.payee}${b.ref?" ref "+b.ref:""}`;
+  const body=`Hi,\n\nPlease find attached proof of payment of ${rands(b.amount)}${b.ref?` for reference ${b.ref}`:""}, paid ${b.paidOn?longD(b.paidOn):"today"}.\n\nThank you,\nCatherine Vercuiel`;
+  return `mailto:${encodeURIComponent(b.proofEmail||"")}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(body)}`;
+}
+
+/* Home: "Due before payday" in the last 7 days before the 29th, "Pay today" on payday; overdue, urgent and proof reminders any day */
+function billsHomeHtml(){
+  const td=todayStr(),pd=nextPayday(td),days=daysBetween(td,pd),isPay=pd===td,all=S.bills||[];
+  const late=all.filter(billLate),urgent=all.filter(b=>!b.paid&&b.urgent&&!billLate(b)),proof=all.filter(b=>b.paid&&b.proofPending);
+  const cycle=all.filter(b=>!b.paid&&!billLate(b)&&!b.urgent&&b.due&&b.due<=pd);
+  const paidNow=isPay?all.filter(b=>b.paid&&b.paidOn===td):[];
+  const showCycle=days<=7&&(cycle.length||paidNow.length);
+  if(!late.length&&!urgent.length&&!proof.length&&!showCycle)return"";
+  const label=isPay?"Pay today":showCycle?"Due before payday":late.length?"Bills overdue":"Bills to sort";
+  let sub="";
+  if(isPay){const left=billSum([...late,...urgent,...cycle]),paid=billSum(paidNow);sub=`${rands(paid)} paid · ${rands(left)} left`}
+  else if(showCycle)sub=`${cycle.length} bill${cycle.length===1?"":"s"} · ${rands(billSum(cycle))} on ${fmt(fromYmd(pd),{weekday:"short",day:1,month:"short"})}, ${days===1?"tomorrow":"in "+days+" days"}`;
+  else sub=`${late.length+urgent.length} to pay · ${rands(billSum([...late,...urgent]))}`;
+  const rows=[...late,...urgent,...(showCycle?cycle.sort(billByDue):[]),...paidNow].map(billRow).join("")+proof.map(proofRow).join("");
+  const n=isPay?paidNow.length+late.length+urgent.length+cycle.length:0,pct=n?Math.round(paidNow.length/n*100):0;
+  return `<section class="billcard ${late.length?"late":""}" aria-label="${label}"><div class="dn-top"><span class="dn-l">${ic("money")}${label}</span><button type="button" class="tlink" data-hub="personal">All bills${ic("right")}</button></div><p class="wu-p">${esc(sub)}</p>${isPay?`<span class="hbar"><i style="width:${pct}%"></i></span>`:""}<div class="card list">${rows}</div></section>`;
+}
+
+/* Personal hub: the Bills block, overdue first, then by due date, with the total still to pay this pay cycle */
+function billsBlockHtml(){
+  const td=todayStr(),pd=nextPayday(td),all=S.bills||[],open=all.filter(b=>!b.paid).sort(billByDue);
+  const cycle=open.filter(b=>!b.due||b.due<=pd),later=open.filter(b=>b.due&&b.due>pd);
+  const paid=all.filter(b=>b.paid).sort((a,b)=>(b.paidOn||"").localeCompare(a.paidOn||"")),proof=paid.filter(b=>b.proofPending);
+  const showPaid=!!S.billPaidAll,PAIDN=8;
+  const head=`<div class="bhead"><span><b>${rands(billSum(cycle))}</b> to pay by ${fmt(fromYmd(pd),{weekday:"short",day:1,month:"short"})}</span><small>${cycle.length} bill${cycle.length===1?"":"s"}${later.length?` · ${later.length} later (${rands(billSum(later))})`:""}</small></div>`;
+  const adds=`<div class="badd"><button type="button" class="primary" data-billpaste>${ic("sparkle")}Paste a bill</button><button type="button" class="ghost" data-billnew>${ic("plus")}Add bill</button></div>`;
+  const list=cycle.map(billRow).join("")+later.map(billRow).join("");
+  return `<section class="sec bills"><div class="sech"><h2>${ic("money")}Bills</h2><span class="cnt">${open.length} open</span></div><div class="card">${head}${adds}</div>`
+    +(list?`<div class="card list" style="margin-top:10px">${list}</div>`:`<p class="hubnone">No bills to pay. Paste one from an SMS or email and Gemini fills in the card.</p>`)
+    +(proof.length?`<div class="card list" style="margin-top:10px">${proof.map(proofRow).join("")}</div>`:"")
+    +(paid.length?`<button type="button" class="latr" data-billpaid aria-expanded="${showPaid}"><span>Paid · ${paid.length}</span>${ic(showPaid?"left":"right")}</button>${showPaid?`<div class="card list">${paid.slice(0,30).map(billRow).join("")}</div>`:""}`:"")
+    +`</section>`;
+}
+
+/* the bill card: every value Cat pastes into her banking app has its own copy button */
+function copyText(v,label){
+  const done=()=>{buzz();toast(label+" copied")};
+  const fallback=()=>{const t=document.createElement("textarea");t.value=v;t.setAttribute("readonly","");t.style.position="fixed";t.style.opacity="0";document.body.appendChild(t);t.select();try{document.execCommand("copy");done()}catch(_){toast("Couldn't copy. Press and hold to copy instead.")}t.remove()};
+  try{navigator.clipboard.writeText(v).then(done,fallback)}catch(_){fallback()}
+}
+const billVal=(b,k)=>k==="amount"?(+b.amount>0?(+b.amount).toFixed(2):""):String(b[k]||"").trim();
+function copyAllText(b){
+  return [["Payee",b.payee],["Bank",[b.bank,b.accountType].filter(Boolean).join(", ")],["Account number",b.accountNo],["Branch code",b.branch],["Reference",b.ref],["Amount",billVal(b,"amount")]].filter(([,v])=>v).map(([l,v])=>`${l}: ${v}`).join("\n");
+}
+function openBill(id){
+  const b=(S.bills||[]).find(x=>x.id===id);if(!b){toast("That bill couldn't be found.");return}
+  const miss=billMissing(b);
+  const rows=BFIELDS.map(([k,l])=>{const v=k==="amount"?(+b.amount>0?rands(b.amount):""):billVal(b,k),need=BNEED.includes(k)&&!billVal(b,k);
+    return `<div class="bf ${need?"miss":""}"><span class="bl">${l}</span><span class="bv">${v?esc(v):`<em>${need?"Not added yet":"None"}</em>`}</span>${BCOPY.has(k)&&billVal(b,k)?`<button type="button" class="bcp" data-bcopy="${k}" aria-label="Copy ${l.toLowerCase()}">${ic("copy")}Copy</button>`:""}</div>`}).join("")
+    +`<div class="bf"><span class="bl">Due</span><span class="bv">${esc(billWhen(b))}${b.repeats==="monthly"?" · monthly":" · once-off"}</span></div>`
+    +(b.proofEmail?`<div class="bf"><span class="bl">Proof of payment</span><span class="bv">${esc(b.proofEmail)}</span><a class="bcp" href="${proofLink(b)}">${ic("mail")}Email</a></div>`:"")
+    +(b.category?`<div class="bf"><span class="bl">Category</span><span class="bv">${esc(BCAT[b.category]||b.category)}</span></div>`:"")
+    +(b.notes?`<div class="bf"><span class="bl">Notes</span><span class="bv">${esc(b.notes)}</span></div>`:"");
+  sheet("Bill",`<div class="in bsheet"><h3>${esc(b.payee||"Bill")}</h3><p class="bbig">${+b.amount>0?rands(b.amount):"No amount yet"}<small class="${billLate(b)?"bl-late":""}">${esc(billWhen(b))}</small></p>
+    ${miss.length&&!b.paid?`<p class="bwarn">${ic("alert")}Add the ${miss.map(k=>BFIELDS.find(f=>f[0]===k)[1].toLowerCase()).join(", ")} before you pay.</p>`:""}
+    ${b.checked===false&&!b.paid?`<p class="bwarn">${ic("alert")}These banking details haven't been checked against an invoice or statement yet.</p>`:""}
+    <div class="bfields">${rows}</div>
+    <div class="acts"><button type="button" class="ghost" id="bAll">${ic("copy")}Copy all</button>${b.paid?`<button type="button" class="ghost" id="bPay">Mark not paid</button>`:`<button type="button" class="primary" id="bPay">${ic("tick")}Mark paid</button>`}</div>
+    ${b.paid&&b.proofPending?`<div class="acts"><a class="ghost bmail" href="${proofLink(b)}">${ic("mail")}Send proof</a><button type="button" class="ghost" id="bProof">${ic("tick")}Proof sent</button></div>`:""}
+    <div class="acts"><button type="button" class="ghost" id="bEdit">${ic("pen")}Edit</button><button type="button" class="danger" id="bDel">Delete</button><button type="button" class="ghost" id="bX">Close</button></div></div>`);
+  $("#bX").onclick=closeSheet;
+  document.querySelectorAll("[data-bcopy]").forEach(x=>x.onclick=()=>{const k=x.dataset.bcopy;copyText(billVal(b,k),BFIELDS.find(f=>f[0]===k)[1].replace(" (R)",""))});
+  $("#bAll").onclick=()=>{const t=copyAllText(b);if(!t){toast("Nothing to copy yet.");return}copyText(t,"Banking details")};
+  $("#bPay").onclick=()=>{closeSheet();b.paid?unpayBill(b):payBill(b)};
+  const pr=$("#bProof");if(pr)pr.onclick=()=>{closeSheet();proofSent(b)};
+  $("#bEdit").onclick=()=>{closeSheet();setTimeout(()=>openBillForm(b),120)};
+  const del=$("#bDel");del.onclick=()=>{if(!del.dataset.armed){del.dataset.armed=1;del.textContent="Tap again to delete";return}const before=strip(b);closeSheet();remove("bills",b.id);toast("Bill deleted",()=>save("bills",b.id,before))};
+}
+
+/* paying: monthly bills make next month's bill straight away; once-off bills go to the Paid list */
+function payBill(b){
+  const td=todayStr(),before=strip(b),rec={...before,paid:true,paidOn:td};delete rec.urgent;
+  if(b.proofEmail)rec.proofPending=true;
+  let nextId=null;
+  if(b.repeats==="monthly"){
+    const base=b.due&&b.due>td?b.due:td;
+    const due=b.payday?nextPayday(ymd(addDays(fromYmd(base),1))):monthAfter(b.due||td);
+    nextId=uid();const nx={...before,due,paid:false,nextOf:b.id,createdAt:Date.now()};["paidOn","proofPending","urgent","nextId"].forEach(k=>delete nx[k]);
+    rec.nextId=nextId;save("bills",nextId,nx);
+  }
+  save("bills",b.id,rec);buzz();
+  const undo=()=>{save("bills",b.id,before);if(nextId)remove("bills",nextId)};
+  const pd=nextPayday(td),left=(S.bills||[]).filter(x=>!x.paid&&x.due&&x.due<=pd);
+  const msg=nextId?`Paid. Next one due ${relDay((S.bills.find(x=>x.id===nextId)||{}).due||td)}`:"Paid";
+  if(pd===td&&!left.length)cheer("Every bill for payday is paid",undo);else toast(b.proofEmail?msg+". Send the proof when you can.":msg,undo);
+}
+function unpayBill(b){
+  const before=strip(b),rec={...before,paid:false};["paidOn","proofPending"].forEach(k=>delete rec[k]);
+  const nx=b.nextId&&(S.bills||[]).find(x=>x.id===b.nextId&&!x.paid),nxBefore=nx?strip(nx):null;
+  if(nx){remove("bills",nx.id);delete rec.nextId}
+  save("bills",b.id,rec);
+  toast("Marked not paid",()=>{save("bills",b.id,before);if(nxBefore)save("bills",nx.id,nxBefore)});
+}
+function proofSent(b){const before=strip(b),rec={...before,proofSent:todayStr()};delete rec.proofPending;save("bills",b.id,rec);buzz();toast("Proof ticked off",()=>save("bills",b.id,before))}
+
+/* adding a bill: paste the SMS or email (or a screenshot), Gemini fills the card, Cat checks it and saves */
+const looksLikeBill=t=>/\b(acc(oun)?t?\.?\s*(no|nr|number|#)|account\s*number|branch(\s*code)?|beneficiary|banking\s*details|proof\s*of\s*payment|\bpop\b)/i.test(t)&&/\d{5,}/.test(t);
+function shrinkImage(file){return new Promise((ok,no)=>{const img=new Image(),url=URL.createObjectURL(file);
+  img.onload=()=>{const k=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);ok({mime:"image/jpeg",data:c.toDataURL("image/jpeg",.85).split(",")[1]})};
+  img.onerror=()=>{URL.revokeObjectURL(url);no(new Error("That image couldn't be opened. Try a PNG or JPG screenshot."))};img.src=url})}
+function openBillPaste(text,file){
+  sheet("Paste a bill",`<form class="in" id="bpForm"><h3>${ic("sparkle")}Paste a bill</h3><p class="hint">Paste the SMS or email, or add a screenshot. Gemini fills in the card and you check it before it saves.</p>
+    <div class="f"><label for="bpText">The message</label><textarea id="bpText" rows="6" placeholder="Paste the message here">${esc(text||"")}</textarea></div>
+    <div class="f"><span class="lb">Screenshot <span class="opt">(optional)</span></span><label class="ghost bfile">${ic("camera")}<span id="bpName">${file?esc(file.name||"Screenshot added"):"Add a screenshot"}</span><input type="file" id="bpFile" accept="image/*" hidden></label></div>
+    <div class="err" id="bpErr" role="alert"></div>
+    <div class="acts sticky"><button class="primary" type="submit" id="bpGo">${ic("sparkle")}Read it</button><button type="button" class="ghost" id="bpSelf">Fill in myself</button><button type="button" class="ghost" id="bpX">Cancel</button></div></form>`);
+  let img=file||null;
+  $("#bpX").onclick=closeSheet;
+  $("#bpFile").onchange=e=>{img=e.target.files[0]||null;$("#bpName").textContent=img?img.name||"Screenshot added":"Add a screenshot"};
+  $("#bpSelf").onclick=()=>{closeSheet();setTimeout(()=>openBillForm(null,{}),120)};
+  $("#bpForm").onsubmit=async e=>{e.preventDefault();const t=$("#bpText").value.trim(),err=$("#bpErr");err.textContent="";
+    if(!t&&!img){err.textContent="Paste the message or add a screenshot first.";return}
+    if(!navigator.onLine){err.textContent="You're offline. Try again once you're connected.";return}
+    const go=$("#bpGo");go.disabled=true;go.innerHTML=`<span class="dots"><i></i><i></i><i></i></span>Reading`;
+    try{const image=img?await shrinkImage(img):undefined;const r=await askApi({bill:t,image});if(!$("#bpForm"))return;closeSheet();setTimeout(()=>openBillForm(null,{...r.bill,fromAi:true}),120)}
+    catch(x){if(!$("#bpForm"))return;go.disabled=false;go.innerHTML=`${ic("sparkle")}Try again`;err.textContent=x.message}};
+  if(file&&!text)setTimeout(()=>$("#bpGo").click(),60);
+}
+/* the saved details for a payee: the most recent checked bill with the same name */
+function savedPayee(name,exceptId){return (S.bills||[]).filter(x=>x.id!==exceptId&&sameName(x.payee,name)&&x.checked!==false).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))[0]||null}
+const BANKK=[["bank","bank"],["accountNo","account number"],["branch","branch code"]];
+function billCheck(data,rec){
+  const prior=rec&&rec.checked!==false&&rec.id?rec:savedPayee(data.payee,rec&&rec.id);
+  if(!prior)return{need:true,msg:`New payee. Check these banking details against an invoice or statement from ${data.payee||"them"}. Fake payment SMSes are common.`};
+  const diff=BANKK.filter(([k])=>String(data[k]||"")&&String(data[k]||"")!==String(prior[k]||""));
+  if(diff.length)return{need:true,changed:true,msg:`The ${diff.map(d=>d[1]).join(", ")} ${diff.length>1?"are":"is"} different from the details saved for ${prior.payee}${diff.length===1&&prior[diff[0][0]]?` (was ${prior[diff[0][0]]})`:""}. Check them against an invoice or statement before you save.`};
+  return{need:false};
+}
+function openBillForm(rec,preset){
+  const isNew=!rec||!rec.id;rec=rec||{};preset=preset||{};
+  let v={...preset,...strip(rec)};if(isNew)v={...preset};
+  if(isNew&&v.payee){const sp=savedPayee(v.payee);if(sp){["bank","accountType","accountNo","branch","proofEmail","category"].forEach(k=>{if(!String(v[k]||"").trim()&&sp[k])v[k]=sp[k]});v.matched=sp.payee}}
+  const pd=nextPayday(),dueMode=v.urgent?"urgent":isNew?(v.due&&v.due!==pd?"date":"payday"):(v.payday?"payday":"date");
+  const inp=(k,l,o={})=>`<div class="f ${BNEED.includes(k)&&!String(k==="amount"?(+v.amount>0?v.amount:""):v[k]||"").trim()?"miss":""}" data-bfk="${k}"><label for="bF_${k}">${l}${o.opt?` <span class="opt">(optional)</span>`:""}</label><input id="bF_${k}" value="${esc(k==="amount"?(+v.amount>0?(+v.amount).toFixed(2):""):v[k]||"")}" ${o.attrs||""} autocomplete="off"></div>`;
+  const payees=[...new Set((S.bills||[]).map(x=>x.payee).filter(Boolean))];
+  sheet(isNew?"New bill":"Edit bill",`<form class="in" id="bForm"><h3>${isNew?"New bill":"Edit bill"}</h3>
+    ${preset.fromAi?`<p class="hint">${ic("sparkle")} Gemini filled this in${v.matched?` and used the details saved for ${esc(v.matched)}`:""}. Check every field. Anything it couldn't find is highlighted.</p>`:""}
+    ${inp("payee","Payee name",{attrs:'list="bPayees" placeholder="As the bank account is named"'})}<datalist id="bPayees">${payees.map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
+    <div class="two">${inp("amount","Amount (R)",{attrs:'inputmode="decimal" placeholder="320.00"'})}${inp("ref","Reference",{attrs:'placeholder="What the payee asked for"'})}</div>
+    <div class="two">${inp("bank","Bank",{attrs:'placeholder="Investec, FNB"'})}${inp("accountType","Account type",{opt:1,attrs:'placeholder="Current, cheque"'})}</div>
+    <div class="two">${inp("accountNo","Account number",{attrs:'inputmode="numeric"'})}${inp("branch","Branch code",{attrs:'inputmode="numeric"'})}</div>
+    <div class="f"><span class="lb">When to pay</span>${optsHtml("bDue",[["payday",`Payday, ${fmt(fromYmd(pd),{weekday:"short",day:1,month:"short"})}`],["urgent","Urgent, pay now"],["date","Pick a date"]],dueMode,"w")}<input id="bF_due" type="date" value="${v.due||pd}" ${dueMode==="date"?"":"hidden"} aria-label="Due date"></div>
+    <div class="f"><span class="lb">Repeats</span>${optsHtml("bRep",[["once","Once-off"],["monthly","Monthly"]],v.repeats==="monthly"?"monthly":"once","r")}</div>
+    ${inp("proofEmail","Proof of payment email",{opt:1,attrs:'type="email" inputmode="email" placeholder="Where to send proof"'})}
+    <div class="f"><span class="lb">Category</span>${optsHtml("bCat",Object.entries(BCAT),v.category||"other","c")}</div>
+    <div class="f"><label for="bF_notes">Notes <span class="opt">(optional)</span></label><textarea id="bF_notes" rows="2">${esc(v.notes||"")}</textarea></div>
+    <div class="bcheck" id="bChk" hidden><p id="bChkMsg"></p><label><input type="checkbox" id="bChkBox"> I checked these details against an invoice or statement</label></div>
+    <div class="err" id="bErr" role="alert"></div>
+    <div class="acts sticky"><button class="primary" type="submit">${isNew?"Save bill":"Save"}</button><button type="button" class="ghost" id="bCancel">Cancel</button></div></form>`);
+  const form=$("#bForm"),val=k=>($("#bF_"+k)||{}).value?.trim()||"";
+  form.querySelectorAll(".opts").forEach(g=>g.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;g.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true");if(g.id==="bDue")$("#bF_due").hidden=b.dataset.w!=="date"}));
+  $("#bCancel").onclick=closeSheet;
+  const collect=()=>{const amt=parseFloat(val("amount").replace(/[R\s,]/gi,m=>m===","?".":""));const w=picked("bDue","w","payday");
+    const d={...strip(rec),payee:val("payee"),amount:amt>0?Math.round(amt*100)/100:null,bank:val("bank"),accountType:val("accountType"),accountNo:val("accountNo").replace(/[\s-]/g,""),branch:val("branch").replace(/[\s-]/g,""),ref:val("ref"),proofEmail:val("proofEmail"),category:picked("bCat","c","other"),repeats:picked("bRep","r","once"),notes:val("notes"),paid:!!rec.paid,createdAt:rec.createdAt||Date.now()};
+    if(w==="payday"){d.payday=true;d.due=pd;delete d.urgent}else if(w==="urgent"){d.urgent=true;d.due=todayStr();delete d.payday}else{d.due=$("#bF_due").value||pd;delete d.payday;delete d.urgent}
+    return d};
+  const refresh=()=>{form.querySelectorAll("[data-bfk]").forEach(f=>{const k=f.dataset.bfk;if(BNEED.includes(k))f.classList.toggle("miss",!val(k))});
+    const c=billCheck(collect(),rec),box=$("#bChk");box.hidden=!c.need;box.classList.toggle("changed",!!c.changed);if(c.need)$("#bChkMsg").textContent=c.msg};
+  form.addEventListener("input",refresh);refresh();
+  setTimeout(()=>{if(isNew&&!preset.fromAi)$("#bF_payee").focus()},60);
+  form.onsubmit=e=>{e.preventDefault();const err=$("#bErr");err.textContent="";const d=collect();
+    if(!d.payee){err.textContent="Add who the bill is from first.";$("#bF_payee").focus();return}
+    if(d.proofEmail&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.proofEmail)){err.textContent="That proof of payment email doesn't look right.";return}
+    const c=billCheck(d,rec);
+    if(c.need&&!$("#bChkBox").checked){if(String(d.accountNo||d.branch)){err.textContent="Tick the box once you've checked the banking details.";$("#bChk").scrollIntoView({block:"center"});return}d.checked=false}
+    else d.checked=true;
+    delete d.fromAi;delete d.matched;
+    save("bills",rec.id||uid(),d);closeSheet();
+    const miss=billMissing(d);toast(miss.length?`Saved. Still missing: ${miss.map(k=>BFIELDS.find(f=>f[0]===k)[1].replace(" (R)","").toLowerCase()).join(", ")}`:isNew?"Bill added":"Bill saved")};
+}
+
+/* the first bill from the brief; account number and branch code are entered in the app */
+function seedBills(){
+  if(S.billsSeeded||S.seeding)return;S.seeding=true;
+  const go=async()=>{if(!(S.bills||[]).some(b=>b.id==="b-magni"))await save("bills","b-magni",{payee:"Dr Paul R Magni Inc",amount:320,bank:"Investec",accountType:"current",accountNo:"",branch:"",ref:"004945",due:"2026-11-29",payday:true,repeats:"once",proofEmail:"admin@panoramapmc.co.za",category:"medical",notes:"",paid:false,checked:false,createdAt:Date.now()});
+    try{await api({op:"settings",data:{billsSeeded:true}});S.billsSeeded=true}catch(_){}S.seeding=false};
+  go();
+}
+
+function billClick(e){
+  const bp=e.target.closest("[data-billpay]");if(bp){const b=(S.bills||[]).find(x=>x.id===bp.dataset.billpay);if(b)b.paid?unpayBill(b):payBill(b);return true}
+  const pf=e.target.closest("[data-bproof]");if(pf){const b=(S.bills||[]).find(x=>x.id===pf.dataset.bproof);if(b)proofSent(b);return true}
+  const bo=e.target.closest("[data-bill]");if(bo){openBill(bo.dataset.bill);return true}
+  if(e.target.closest("[data-billpaste]")){openBillPaste("");return true}
+  if(e.target.closest("[data-billnew]")){openBillForm(null,{});return true}
+  if(e.target.closest("[data-billpaid]")){S.billPaidAll=!S.billPaidAll;render();return true}
+  return false;
+}
+/* a screenshot pasted into Quick Add goes straight to the bill reader */
+document.addEventListener("paste",e=>{if(e.target.id!=="qaIn")return;const f=[...(e.clipboardData?.files||[])].find(x=>/^image\//.test(x.type));if(!f)return;e.preventDefault();openBillPaste("",f)});
+
 /* ---------- tell the planner (Gemini) ---------- */
 async function askApi(body){
   const r=await fetch("/api/assistant",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
@@ -1354,13 +1585,14 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("submit",e=>{
   const f=e.target;
-  if(f.id==="qadd"){e.preventDefault();const t=(S.qa||"").trim();if(!t){openAdd(homeSel());return}$("#qaIn").blur();askPlanner(t);return}
+  if(f.id==="qadd"){e.preventDefault();const t=(S.qa||"").trim();if(!t){openAdd(homeSel());return}$("#qaIn").blur();if(looksLikeBill(t)){S.qa="";openBillPaste(t);setTimeout(()=>{const g=$("#bpGo");if(g)g.click()},60);return}askPlanner(t);return}
   if(f.dataset.addstep){e.preventDefault();const i=$("#dStepIn"),v=i.value.trim();if(!v)return;const r=resolve(f.dataset.addstep);if(!r)return;save(r.col,r.rec.id,{...strip(r.rec),steps:[...(r.rec.steps||[]),{text:v,done:false}]});setTimeout(()=>{const n=$("#dStepIn");if(n)n.focus({preventScroll:true})},30);return}
 });
 document.addEventListener("click",e=>{
   if(e.target.closest("[data-step]")||e.target.closest(".step"))return;
   if(e.target.closest("[data-dockx]")){closeDock();return}
   if(e.target.closest("[data-sheetx]")){closeSheet();return}
+  if(billClick(e))return;
   const tg=e.target.closest("[data-toggle]");if(tg){const t=S.tasks.find(x=>x.id===tg.dataset.toggle);if(t)toggleTask(t,tg);return}
   const ac=e.target.closest("[data-act]");if(ac){const r=resolve(ac.dataset.key);if(!r)return;const{col,rec,date}=r,a=ac.dataset.act;
     if(a==="focus"){startFocus(col,rec,date);return}
@@ -1398,7 +1630,7 @@ document.addEventListener("click",e=>{
   const pp=e.target.closest("[data-pickpri]");if(pp){pickPriority(pp.dataset.pickpri);return}
   const fl=e.target.closest("[data-fill]");if(fl){const[d,a,b]=fl.dataset.fill.split("|");fillGap(d,+a,+b);return}
   const qd=e.target.closest("[data-qadd]");if(qd){const t=(S.qa||"").trim();if(!t){$("#qaIn").focus();return}const k=qd.dataset.qadd;
-    if(k==="inbox")quickInbox(t);else if(k==="ai")askPlanner(t);else{S.qaTitle=t;S.qa="";openAdd(homeSel())}return}
+    if(k==="inbox")quickInbox(t);else if(k==="bill"){S.qa="";openBillPaste(t);setTimeout(()=>{const g=$("#bpGo");if(g)g.click()},60)}else if(k==="ai")askPlanner(t);else{S.qaTitle=t;S.qa="";openAdd(homeSel())}return}
   const adt=e.target.closest("[data-addday]");if(adt&&!e.target.closest("[data-addk]")){openAdd(adt.dataset.addday);return}
   /* calendar */
   if(e.target.closest("#back")){backToPlanner();return}
@@ -1458,8 +1690,8 @@ setInterval(()=>{applyTint();if($("#sheetRoot").innerHTML||$("#focus"))return;
 
 /* ---------- store: cached data shows at once, fresh data follows ---------- */
 function applyData(d){
-  S.tasks=d.tasks||[];S.blocks=d.blocks||[];S.routines=d.routines||[];S.slots=d.slots||[];
-  const st=d.settings||{};S.work={start:st.workStart||"09:00",end:st.workEnd||"16:00"};S.lead=st.leadMin??10;S.morning=st.morning||null;
+  S.tasks=d.tasks||[];S.blocks=d.blocks||[];S.routines=d.routines||[];S.slots=d.slots||[];S.bills=d.bills||[];
+  const st=d.settings||{};S.work={start:st.workStart||"09:00",end:st.workEnd||"16:00"};S.lead=st.leadMin??10;S.morning=st.morning||null;S.billsSeeded=!!st.billsSeeded;
   if(st.palette&&st.palette!==S.palette)applyPalette(st.palette);
 }
 async function load(){
@@ -1470,6 +1702,7 @@ async function load(){
     const d=await r.json();applyData(d);
     S.publicKey=d.alerts.publicKey;S.devices=d.alerts.devices;S.lastCheck=d.alerts.lastCheck||null;S.connector=d.connectorUrl;
     cacheData();status("");
+    if(!S.billsSeeded)seedBills();
     if(!sheetOpen()&&!["qaIn","dNote","dStepIn"].includes(document.activeElement?.id))render();
   }catch(_){status(S.cached?"Showing your last saved plan. Changes will sync once you're back online.":"Can't reach your planner right now. Check your connection; changes will show once it's back.")}
 }

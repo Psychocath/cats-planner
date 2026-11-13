@@ -15,6 +15,7 @@ export async function GET(req: Request) {
     blocks: d.blocks,
     routines: d.routines,
     slots: d.slots,
+    bills: d.bills,
     settings: d.settings,
     connectorUrl: d.claudeKey ? `${origin}/api/mcp/${d.claudeKey}` : null,
     alerts: { devices: d.subs.length, lastCheck: d.lastCheck ?? null, publicKey: (await getKeys(d)).publicKey },
@@ -48,6 +49,7 @@ export async function POST(req: Request) {
       if (s.workEnd) d.settings.workEnd = String(s.workEnd);
       if (s.palette !== undefined && ["rainbow", "calm", "ocean", "blossom", "collective"].includes(String(s.palette))) d.settings.palette = String(s.palette);
       if (s.morning !== undefined) d.settings.morning = s.morning && s.morning !== "off" && TIME.test(String(s.morning)) ? String(s.morning) : null;
+      if (s.billsSeeded !== undefined) d.settings.billsSeeded = !!s.billsSeeded;
       if (s.leadMin !== undefined) d.settings.leadMin = Math.max(0, Math.min(60, Number(s.leadMin) || 0));
       return d.settings;
     });
@@ -69,8 +71,9 @@ export async function POST(req: Request) {
 
   if (op === "set") {
     if (!data || typeof data !== "object") return NextResponse.json({ error: "Nothing to save." }, { status: 400 });
-    if (c !== "slots" && data.title !== undefined && !String(data.title).trim()) return NextResponse.json({ error: "Give it a title first." }, { status: 400 });
-    for (const k of ["date", "for", "deadline", "until"]) {
+    if (c === "bills" && data.payee !== undefined && !String(data.payee).trim()) return NextResponse.json({ error: "Add who the bill is from first." }, { status: 400 });
+    if (c !== "slots" && c !== "bills" && data.title !== undefined && !String(data.title).trim()) return NextResponse.json({ error: "Give it a title first." }, { status: 400 });
+    for (const k of ["date", "for", "deadline", "until", "due", "paidOn"]) {
       if (data[k] && !realDate(String(data[k]))) return NextResponse.json({ error: "That date doesn't exist. Pick another one." }, { status: 400 });
     }
     await updateData((d) => {

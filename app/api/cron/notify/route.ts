@@ -73,7 +73,11 @@ export async function GET(req: Request) {
   const wAt = toMin(data.settings.workEnd);
   const openNow = data.tasks.filter((t) => !t.done && !t.ai && !t.waiting && t.date && String(t.date) <= now.date && !/\bshopping\s*$/i.test(String(t.title || ""))).length;
   const wrapDue = now.wd <= 5 && openNow > 0 && !data.sent[wkey] && wAt <= now.minute + 2 && wAt > now.minute - 10;
-  if (!due.length && !morningDue && !wrapDue) {
+  // Bills: one alert at 08:00, 7 days before payday, on payday, and on any day a bill is overdue.
+  const bills = billAlert(data.bills || [], now.date);
+  const bAt = 8 * 60;
+  const billDue = !!bills && !data.sent[bills.key] && bAt <= now.minute + 2 && bAt > now.minute - 10;
+  if (!due.length && !morningDue && !wrapDue && !billDue) {
     if (staleCheck) await updateData((d) => { d.lastCheck = Date.now(); });
     return NextResponse.json({ ok: true, due: 0 });
   }
@@ -113,14 +117,46 @@ export async function GET(req: Request) {
     r.dead.forEach((e) => dead.add(e));
   }
 
+  if (billDue && bills) {
+    const r = await sendToAll(data.subs, { title: bills.title, body: bills.body, tag: bills.key }, data);
+    r.dead.forEach((e) => dead.add(e));
+  }
+
   const weekAgo = Date.now() - 7 * 864e5;
   await updateData((d) => {
     d.lastCheck = Date.now();
     due.forEach(({ key }) => (d.sent[key] = Date.now()));
     if (morningDue) d.sent[mkey] = Date.now();
     if (wrapDue) d.sent[wkey] = Date.now();
+    if (billDue && bills) d.sent[bills.key] = Date.now();
     for (const k of Object.keys(d.sent)) if (d.sent[k] < weekAgo) delete d.sent[k];
     if (dead.size) d.subs = d.subs.filter((s) => !dead.has(s.endpoint));
   });
   return NextResponse.json({ ok: true, due: due.length });
+}
+
+/* Payday is the 29th, or the last day of a shorter month (28 Feb). A bill set to "payday" carries that date as its due date. */
+const ymdUTC = (d: Date) => d.toISOString().slice(0, 10);
+function paydayOn(y: number, m: number) {
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return ymdUTC(new Date(Date.UTC(y, m, Math.min(29, last))));
+}
+function nextPayday(today: string) {
+  const [y, m] = today.split("-").map(Number);
+  const p = paydayOn(y, m - 1);
+  return p >= today ? p : paydayOn(y, m);
+}
+const rand = (n: number) => "R" + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+function billAlert(bills: Record<string, unknown>[], today: string) {
+  const open = bills.filter((b) => !b.paid && b.due);
+  const total = (l: Record<string, unknown>[]) => rand(l.reduce((a, b) => a + (Number(b.amount) || 0), 0));
+  const late = open.filter((b) => String(b.due) < today);
+  if (late.length) return { key: `bills|late|${today}`, title: late.length === 1 ? "A bill is overdue" : `${late.length} bills are overdue`, body: `${late.map((b) => b.payee).slice(0, 3).join(", ")} · ${total(late)} to pay` };
+  const pd = nextPayday(today);
+  const byPd = open.filter((b) => String(b.due) <= pd);
+  if (!byPd.length) return null;
+  if (pd === today) return { key: `bills|pay|${today}`, title: "Payday: bills to pay today", body: `${byPd.length} bill${byPd.length > 1 ? "s" : ""} · ${total(byPd)}. Open Bills to copy the details.` };
+  const days = Math.round((Date.parse(pd) - Date.parse(today)) / 864e5);
+  if (days === 7) return { key: `bills|week|${pd}`, title: "Due before payday", body: `${byPd.length} bill${byPd.length > 1 ? "s" : ""} · ${total(byPd)} on the ${Number(pd.slice(8))}th` };
+  return null;
 }
